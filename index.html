@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ordförråd</title>
+<meta name="theme-color" content="#f4f6f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1412" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ordförråd">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-512.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow column (max 40rem), segmented nav on top, the active card centered as the focus. */
+:root {
+  --bg: #f4f6f3;
+  --surface: #ffffff;
+  --sunk: #eaeee9;
+  --ink: #16231e;
+  --muted: #5b6a63;
+  --line: #d9e0dc;
+  --accent: #1f5d4a;
+  --accent-ink: #ffffff;
+  --ok: #2c7a4c;
+  --almost: #a86b12;
+  --wrong: #b83434;
+  --mark: #fbe3a3;
+  --f-display: "Young Serif", Georgia, "Times New Roman", serif;
+  --f-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1412; --surface: #172019; --sunk: #111915; --ink: #e6eee9; --muted: #96a59e; --line: #29352f;
+  --accent: #74c6a5; --accent-ink: #0a1511; --ok: #6fd09a; --almost: #f0bf63; --wrong: #f07f7f; --mark: #5a4718;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1412; --surface: #172019; --sunk: #111915; --ink: #e6eee9; --muted: #96a59e; --line: #29352f;
+  --accent: #74c6a5; --accent-ink: #0a1511; --ok: #6fd09a; --almost: #f0bf63; --wrong: #f07f7f; --mark: #5a4718;
+  color-scheme: dark }
+
+[hidden] { display: none !important; }
+html, body { min-height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--f-body); }
+body { margin: 0; -webkit-text-size-adjust: 100%; }
+.wrap { max-width: 40rem; margin: 0 auto; padding-block: calc(20px + env(safe-area-inset-top, 0px)) calc(48px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 20px; }
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { font-family: var(--f-display); font-size: 1.6rem; line-height: 1; letter-spacing: -0.01em; }
+.brand small { display: block; font: 500 .72rem/1.4 var(--f-body); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-top: 4px; }
+nav.tabs { display: flex; background: var(--sunk); border-radius: 999px; padding: 4px; gap: 2px; }
+nav.tabs button { border: 0; background: transparent; color: var(--muted); font: 600 .9rem var(--f-body); padding: 8px 14px; border-radius: 999px; cursor: pointer; }
+nav.tabs button[aria-current="page"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+
+h2 { font-family: var(--f-display); font-weight: 400; font-size: 1.35rem; margin: 0; text-wrap: balance; }
+h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: .875rem; }
+.eyebrow { font-size: .72rem; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.spread { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.stats { display: flex; gap: 20px; flex-wrap: wrap; }
+.stat b { display: block; font: 400 1.7rem/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.stat span { font-size: .8rem; color: var(--muted); }
+
+button, .btn { font: 600 .95rem var(--f-body); }
+.btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 10px 16px; border-radius: 10px; cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); padding-inline: 8px; }
+.btn.danger { color: var(--wrong); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.big { padding: 13px 22px; font-size: 1rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px; padding: 6px 14px; cursor: pointer; font: 600 .9rem var(--f-body); font-variant-numeric: tabular-nums; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip:disabled { opacity: .4; cursor: not-allowed; }
+
+input[type=text], input[type=search], textarea, select {
+  font: 400 1rem var(--f-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; box-sizing: border-box; }
+textarea { font-family: var(--f-mono); font-size: .85rem; min-height: 120px; resize: vertical; }
+label.field { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; font-weight: 600; color: var(--muted); flex: 1 1 160px; min-width: 0; }
+
+/* Session */
+.session-top { display: flex; align-items: center; gap: 12px; }
+.bar { flex: 1; height: 6px; background: var(--sunk); border-radius: 99px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); transition: width .25s; }
+.count { font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px 22px 24px; display: flex; flex-direction: column; gap: 18px; align-items: center; text-align: center; box-shadow: 0 10px 30px -18px rgb(0 0 0 / .25); }
+.prompt { font: 400 clamp(2rem, 8vw, 3rem)/1.1 var(--f-display); overflow-wrap: anywhere; text-wrap: balance; }
+.say { border: 0; background: var(--sunk); color: var(--muted); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: inline-grid; place-items: center; }
+.say svg { width: 18px; height: 18px; }
+.answer { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.answer input { text-align: center; font-size: 1.25rem; padding: 14px; background: var(--bg); }
+.answer input.ok { border-color: var(--ok); }
+.answer input.almost { border-color: var(--almost); }
+.answer input.wrong { border-color: var(--wrong); }
+.feedback { width: 100%; border-radius: 12px; padding: 14px; background: var(--sunk); display: flex; flex-direction: column; gap: 6px; }
+.verdict { font-weight: 600; }
+.verdict.ok { color: var(--ok); } .verdict.almost { color: var(--almost); } .verdict.wrong { color: var(--wrong); }
+.solution { font: 400 1.5rem/1.2 var(--f-display); overflow-wrap: anywhere; }
+.solution mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; text-decoration: underline; text-decoration-color: var(--almost); text-underline-offset: 4px; }
+.typed { font-family: var(--f-mono); font-size: .85rem; color: var(--muted); overflow-wrap: anywhere; }
+.typed s { color: var(--wrong); }
+.note { font-size: .9rem; color: var(--muted); font-style: italic; }
+.rate { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+.rate .btn { padding: 14px; display: flex; flex-direction: column; gap: 2px; align-items: center; }
+.rate .btn small { font-weight: 400; font-size: .78rem; color: var(--muted); }
+.rate .hard { border-color: var(--almost); }
+.rate .easy { border-color: var(--ok); }
+kbd { font: 500 .72rem var(--f-mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); }
+.hint { font-size: .78rem; color: var(--muted); }
+
+/* Learn */
+.learn-card { min-height: 230px; justify-content: center; cursor: default; }
+.learn-card .trans { font: 400 1.5rem/1.25 var(--f-body); color: var(--accent); overflow-wrap: anywhere; }
+.learn-card .trans.hidden { color: transparent; background: var(--sunk); border-radius: 8px; cursor: pointer; user-select: none; }
+.pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+
+/* Words */
+.words { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.words li { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.words li:last-child { border-bottom: 0; }
+.words .sv { font-weight: 600; overflow-wrap: anywhere; }
+.words .en { color: var(--muted); overflow-wrap: anywhere; }
+.words .state { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
+.words .state.due { color: var(--almost); }
+.words .state.tricky { color: var(--wrong); }
+.words li.editing { grid-template-columns: 1fr; }
+details.import summary { cursor: pointer; font-weight: 600; }
+.preview { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.preview table { border-collapse: collapse; font-size: .85rem; width: 100%; }
+.preview td, .preview th { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
+.preview th { color: var(--muted); font-weight: 600; }
+.steps { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: .9rem; z-index: 20; max-width: calc(100% - 32px); }
+.banner { font-size: .85rem; padding: 10px 14px; border-radius: 10px; background: var(--sunk); color: var(--muted); }
+.empty { text-align: center; padding: 28px 16px; }
+.summary-score { font: 400 3rem/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.missed { list-style: none; margin: 0; padding: 0; }
+.missed li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.missed li span:last-child { color: var(--muted); text-align: right; }
+@media (max-width: 480px) {
+  nav.tabs { width: 100%; } nav.tabs button { flex: 1; padding-inline: 6px; }
+  .words li { grid-template-columns: minmax(0,1fr) auto; } .words .en { grid-column: 1; grid-row: 2; }
+  .words li > :last-child { grid-row: 1 / span 2; grid-column: 2; }
+}
+.sync-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 20px; }
+.sync-grid > * { min-width: 0; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="brand">Ordförråd<small>Swedish vocabulary</small></div>
+    <nav class="tabs" aria-label="Sections">
+      <button id="tab-practice" data-view="practice">Practice</button>
+      <button id="tab-learn" data-view="learn">Learn</button>
+      <button id="tab-words" data-view="words">Words</button>
+    </nav>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+  <main id="view"><div class="panel empty"><p class="muted">Loading your words…</p></div></main>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+(() => {
+"use strict";
+const MIN = 60e3, DAY = 864e5;
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const newId = () => "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+/* ---------- state & storage ---------- */
+/* Everything lives in this browser's localStorage; nothing is sent anywhere. */
+const S = { cards: new Map(), settings: { direction: "sv-tr", newPerDay: 20 }, ready: false };
+const LS = "ordforrad.v1";
+function loadLocal() {
+  try { const d = JSON.parse(localStorage.getItem(LS) || "null"); if (d) { S.cards = new Map(Object.entries(d.cards || {})); Object.assign(S.settings, d.settings || {}); } } catch {}
+}
+function saveLocal() {
+  try { localStorage.setItem(LS, JSON.stringify({ cards: Object.fromEntries(S.cards), settings: S.settings })); return true; }
+  catch { toast("Couldn't save on this device. Storage may be full or blocked."); return false; }
+}
+function saveCard(id, card) { S.cards.set(id, card); saveLocal(); return Promise.resolve(); }
+function deleteCard(id) { S.cards.delete(id); saveLocal(); return Promise.resolve(); }
+function saveSettings() { saveLocal(); }
+
+function init() {
+  loadLocal();
+  S.ready = true;
+  try { localStorage.setItem(LS + ".test", "1"); localStorage.removeItem(LS + ".test"); }
+  catch { banner("This browser is blocking storage (private browsing?), so words you add won't be kept."); }
+  try { navigator.storage?.persist?.(); } catch {}
+  refresh();
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+/* Keep two open tabs of the app in step. */
+window.addEventListener("storage", e => { if (e.key === LS) { S.cards = new Map(); loadLocal(); refresh(); } });
+function banner(t) { const b = $("#banner"); b.textContent = t; b.hidden = !t; }
+let toastT;
+function toast(t) { const el = $("#toast"); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 2600); }
+
+/* ---------- card helpers ---------- */
+const now = () => Date.now();
+const isNew = c => !c.reps && !c.lapses && !c.introduced;
+const isDue = c => !isNew(c) && (c.due || 0) <= now();
+const isTricky = c => (c.lapses || 0) >= 2 || (!isNew(c) && (c.ease || 2.5) < 2.1);
+const today = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+function newLeftToday() {
+  const introducedToday = [...S.cards.values()].filter(c => (c.introduced || 0) >= today()).length;
+  return Math.max(0, (S.settings.newPerDay || 20) - introducedToday);
+}
+function blankCard(sv, tr, note) { return { sv, tr, note: note || "", created: now(), ease: 2.5, ivl: 0, due: 0, reps: 0, lapses: 0 }; }
+
+/* ---------- answer checking ---------- */
+function fold(s) { return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim(); }
+const ARTICLES = /^(en|ett|att|to|the|a|an|el|la|los|las|un|una|le|les|der|die|das)\s+/;
+function variants(answer) {
+  const out = new Set();
+  const parts = String(answer).split(/[,;\/]|\s+\|\s+/).map(s => s.trim()).filter(Boolean);
+  for (const p of parts.length ? parts : [answer]) {
+    const noParen = p.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+    for (const v of [p, noParen]) if (v) { out.add(v); const stripped = v.replace(new RegExp(ARTICLES.source, "i"), ""); if (stripped && stripped !== v) out.add(stripped); }
+  }
+  return [...out];
+}
+function lev(a, b) {
+  const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+const tolerance = len => len <= 3 ? 0 : len <= 6 ? 1 : 2;
+function grade(input, answer) {
+  const raw = input.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!raw) return { result: "wrong", target: variants(answer)[0] || answer };
+  const vs = variants(answer);
+  const inF = fold(input).replace(ARTICLES, "");
+  let best = null;
+  for (const v of vs) {
+    if (v.toLowerCase() === raw) return { result: "ok", target: v };
+    const vF = fold(v).replace(ARTICLES, "");
+    const d = lev(inF, vF), tie = lev(raw, v.toLowerCase());
+    if (!best || d < best.d || (d === best.d && tie < best.tie)) best = { d, tie, v, len: vF.length };
+  }
+  if (best.d === 0 || best.d <= tolerance(best.len)) return { result: "almost", target: best.v };
+  return { result: "wrong", target: best.v };
+}
+/* Mark the letters in `target` that the typed answer got wrong or missed. */
+function diffMarks(input, target) {
+  const a = [...input.trim().toLowerCase()], b = [...target];
+  const bl = b.map(ch => ch.toLowerCase());
+  const m = a.length, n = b.length;
+  const D = Array.from({ length: m + 1 }, (_, i) => { const r = new Array(n + 1).fill(0); r[0] = i; return r; });
+  for (let j = 0; j <= n; j++) D[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+    D[i][j] = Math.min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + (a[i - 1] === bl[j - 1] ? 0 : 1));
+  const markB = new Array(n).fill(false), markA = new Array(m).fill(false);
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && D[i][j] === D[i - 1][j - 1] + (a[i - 1] === bl[j - 1] ? 0 : 1)) { if (a[i - 1] !== bl[j - 1]) { markB[j - 1] = true; markA[i - 1] = true; } i--; j--; }
+    else if (j > 0 && D[i][j] === D[i][j - 1] + 1) { markB[j - 1] = true; j--; }
+    else { markA[i - 1] = true; i--; }
+  }
+  const html = (chars, marks, tag) => { let out = "", open = false; chars.forEach((c, k) => { if (marks[k] && !open) { out += `<${tag}>`; open = true; } if (!marks[k] && open) { out += `</${tag}>`; open = false; } out += esc(c); }); return out + (open ? `</${tag}>` : ""); };
+  return { target: html(b, markB, "mark"), typed: html([...input.trim()], markA, "s") };
+}
+
+/* ---------- speech ---------- */
+const canSpeak = "speechSynthesis" in window;
+function speak(text) {
+  if (!canSpeak) return;
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = "sv-SE"; const v = speechSynthesis.getVoices().find(v => v.lang?.toLowerCase().startsWith("sv")); if (v) u.voice = v; u.rate = 0.9; speechSynthesis.speak(u); } catch {}
+}
+const SAY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
+const sayBtn = text => canSpeak ? `<button class="say" type="button" data-say="${esc(text)}" aria-label="Hear it in Swedish">${SAY_SVG}</button>` : "";
+document.addEventListener("click", e => { const b = e.target.closest("[data-say]"); if (b) speak(b.dataset.say); });
+
+/* ---------- routing ---------- */
+let view = "practice", session = null;
+const VIEWS = ["practice", "learn", "words"];
+function go(v) {
+  view = v; session = null;
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.view === v ? "page" : "false"));
+  try { history.replaceState(null, "", "#" + v); } catch {}
+  build();
+}
+document.querySelectorAll("nav.tabs button").forEach(b => b.addEventListener("click", () => go(b.dataset.view)));
+function build() { const el = $("#view"); el.innerHTML = ""; if (!S.ready) { el.innerHTML = '<div class="panel empty"><p class="muted">Loading your words…</p></div>'; return; }
+  ({ practice: buildPractice, learn: buildLearn, words: buildWords, session: buildSession })[view](el); }
+let built = false;
+function refresh() {
+  if (!built && S.ready) { built = true; build(); return; }
+  if (view === "practice") build();
+  else if (view === "learn") learnRefresh?.();
+  else if (view === "words") wordsRefresh?.();
+}
+
+function emptyState(el) {
+  el.innerHTML = `<div class="panel empty stack"><h2>No words yet</h2><p class="muted">On your laptop, add words or import your Notion list in the Words tab. On your phone, open Words and choose the word list file from iCloud Drive.</p><div><button class="btn primary" id="go-words">Go to Words</button></div></div>`;
+  $("#go-words").onclick = () => go("words");
+}
+
+/* ---------- practice home ---------- */
+const DIRS = [["sv-tr", "Swedish → translation"], ["tr-sv", "Translation → Swedish"], ["mix", "Mixed"]];
+let drillSize = 15;
+function buildPractice(el) {
+  const cards = [...S.cards.entries()];
+  if (!cards.length) return emptyState(el);
+  const due = cards.filter(([, c]) => isDue(c)).length;
+  const fresh = Math.min(cards.filter(([, c]) => isNew(c)).length, newLeftToday());
+  const tricky = cards.filter(([, c]) => isTricky(c)).length;
+  const sizes = [15, 30, 50, 100];
+  if (!sizes.includes(drillSize) && drillSize !== "all") drillSize = 15;
+  el.innerHTML = `
+  <div class="stack" style="gap:16px">
+    <section class="panel">
+      <div class="spread"><div><p class="eyebrow">Spaced repetition</p><h2>Today's review</h2></div></div>
+      <div class="stats">
+        <div class="stat"><b>${due}</b><span>due now</span></div>
+        <div class="stat"><b>${fresh}</b><span>new for today</span></div>
+        <div class="stat"><b>${tricky}</b><span>tricky words</span></div>
+      </div>
+      <p class="muted small">Missed words come back within minutes. Rate the ones you get right as Hard or Easy to decide when you see them next.</p>
+      <div class="row"><button class="btn primary big" id="start-srs" ${due + fresh ? "" : "disabled"}>${due + fresh ? `Start review · ${due + fresh}` : "All caught up"}</button></div>
+      ${due + fresh ? "" : `<p class="small muted">${nextDueText()}</p>`}
+    </section>
+    <section class="panel">
+      <div><p class="eyebrow">Quick practice</p><h2>Random cards</h2></div>
+      <p class="muted small">How many cards do you have time for?</p>
+      <div class="chips" id="sizes">${sizes.map(n => `<button class="chip" data-n="${n}" aria-pressed="${drillSize === n}" ${n > cards.length && n !== 15 ? "disabled" : ""}>${n}</button>`).join("")}<button class="chip" data-n="all" aria-pressed="${drillSize === "all"}">All ${cards.length}</button></div>
+      <div class="row"><button class="btn primary big" id="start-drill">Start · ${drillSize === "all" ? cards.length : Math.min(drillSize, cards.length)} cards</button></div>
+    </section>
+    <section class="panel">
+      <h3>Answer direction</h3>
+      <div class="chips" id="dirs">${DIRS.map(([k, l]) => `<button class="chip" data-d="${k}" aria-pressed="${S.settings.direction === k}">${l}</button>`).join("")}</div>
+      <label class="field" style="max-width:14rem">New words per day
+        <select id="npd">${[5, 10, 15, 20, 30, 50].map(n => `<option ${n === S.settings.newPerDay ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+    </section>
+  </div>`;
+  $("#sizes").onclick = e => { const b = e.target.closest("[data-n]"); if (!b || b.disabled) return; drillSize = b.dataset.n === "all" ? "all" : +b.dataset.n; build(); };
+  $("#dirs").onclick = e => { const b = e.target.closest("[data-d]"); if (!b) return; S.settings.direction = b.dataset.d; saveSettings(); build(); };
+  $("#npd").onchange = e => { S.settings.newPerDay = +e.target.value; saveSettings(); build(); };
+  $("#start-drill").onclick = () => startSession("drill");
+  const s = $("#start-srs"); if (s) s.onclick = () => startSession("srs");
+}
+function nextDueText() {
+  const next = [...S.cards.values()].filter(c => !isNew(c)).map(c => c.due).sort((a, b) => a - b)[0];
+  if (!next) return "Add more words to keep going.";
+  const h = (next - now()) / 36e5;
+  return "Next review " + (h < 1 ? `in ${Math.max(1, Math.round(h * 60))} min` : h < 24 ? `in ${Math.round(h)} h` : `in ${Math.round(h / 24)} days`) + ". Quick practice is always open.";
+}
+
+/* ---------- sessions ---------- */
+function pickDir() { const d = S.settings.direction; return d === "mix" ? (Math.random() < .5 ? "sv-tr" : "tr-sv") : d; }
+function startSession(kind, ids) {
+  let queueIds;
+  if (ids) queueIds = shuffle(ids);
+  else if (kind === "drill") { const all = shuffle([...S.cards.keys()]); queueIds = drillSize === "all" ? all : all.slice(0, drillSize); }
+  else {
+    const entries = [...S.cards.entries()];
+    const due = entries.filter(([, c]) => isDue(c)).sort((a, b) => a[1].due - b[1].due).map(([id]) => id);
+    const fresh = shuffle(entries.filter(([, c]) => isNew(c)).map(([id]) => id)).slice(0, newLeftToday());
+    queueIds = [...shuffle(due), ...fresh];
+  }
+  if (!queueIds.length) return;
+  session = { kind, queue: queueIds.map(id => ({ id, dir: pickDir() })), total: queueIds.length, done: 0, right: 0, missed: new Set(), phase: "ask", res: null };
+  view = "session"; build();
+}
+function buildSession(el) {
+  const s = session;
+  if (!s.queue.length) return buildSummary(el);
+  const item = s.queue[0], c = S.cards.get(item.id);
+  if (!c) { s.queue.shift(); return build(); }
+  const swedishPrompt = item.dir === "sv-tr";
+  const prompt = swedishPrompt ? c.sv : c.tr, answer = swedishPrompt ? c.tr : c.sv;
+  const pct = Math.round(100 * s.done / Math.max(1, s.done + s.queue.length));
+  el.innerHTML = `
+  <div class="stack" style="gap:16px">
+    <div class="session-top"><button class="btn ghost" id="quit">✕ End</button><div class="bar"><i style="width:${pct}%"></i></div><span class="count">${s.done} / ${s.done + s.queue.length}</span></div>
+    <div class="card">
+      <p class="eyebrow">${s.kind === "srs" ? (isNew(c) ? "New word · " : "Review · ") : ""}${swedishPrompt ? "Type the translation" : "Type it in Swedish"}</p>
+      <div class="row" style="justify-content:center"><div class="prompt" lang="${swedishPrompt ? "sv" : ""}">${esc(prompt)}</div>${swedishPrompt ? sayBtn(c.sv) : ""}</div>
+      <form class="answer" id="ans" autocomplete="off">
+        <input type="text" id="answer-input" lang="${swedishPrompt ? "" : "sv"}" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="Your answer" aria-label="Your answer">
+        <div class="row" style="justify-content:center"><button class="btn primary" type="submit">Check</button><button class="btn ghost" type="button" id="dunno">I don't know</button></div>
+      </form>
+      <div id="fb" hidden style="width:100%;display:flex;flex-direction:column;gap:12px"></div>
+    </div>
+    <p class="hint" style="text-align:center"><kbd>Enter</kbd> check / next${s.kind === "srs" ? " · <kbd>1</kbd> Hard · <kbd>2</kbd> Easy" : ""}</p>
+  </div>`;
+  const input = $("#answer-input");
+  setTimeout(() => input.focus(), 30);
+  $("#quit").onclick = () => { s.queue = []; build(); };
+  const check = given => {
+    if (s.phase !== "ask") return;
+    const g = grade(given, answer);
+    s.phase = "result"; s.res = { ...g, given, answer, item, swedishPrompt };
+    input.readOnly = true; input.classList.add(g.result);
+    $("#ans .row").hidden = true;
+    showFeedback();
+  };
+  $("#ans").onsubmit = e => { e.preventDefault(); if (s.phase === "ask") check(input.value); else if (s.phase === "result") advanceDefault(); };
+  $("#dunno").onclick = () => check("");
+}
+function showFeedback() {
+  const s = session, r = s.res, c = S.cards.get(r.item.id), fb = $("#fb");
+  const d = r.given.trim() ? diffMarks(r.given, r.target) : { target: esc(r.target), typed: "" };
+  const words = { ok: "Correct", almost: "Correct, but check the spelling", wrong: r.given.trim() ? "Not quite" : "Here's the answer" };
+  const showAll = r.answer.trim() !== r.target ? `<p class="small muted">Full answer: ${esc(r.answer)}</p>` : "";
+  const counted = r.result !== "wrong";
+  let actions;
+  if (s.kind === "srs" && counted) actions = rateButtons(c);
+  else if (s.kind === "srs") actions = `<div class="row" style="justify-content:center"><button class="btn primary" id="next">Next · see it again soon</button><button class="btn ghost" id="override">I was right</button></div>`;
+  else actions = `<div class="row" style="justify-content:center"><button class="btn primary" id="next">Next</button>${counted ? "" : '<button class="btn ghost" id="override">I was right</button>'}</div>`;
+  fb.innerHTML = `
+    <div class="feedback">
+      <p class="verdict ${r.result}">${words[r.result]}</p>
+      <div class="row" style="justify-content:center"><span class="solution" lang="${r.swedishPrompt ? "" : "sv"}">${r.result === "ok" ? esc(r.target) : d.target}</span>${!r.swedishPrompt ? sayBtn(c.sv) : ""}</div>
+      ${r.result !== "ok" && d.typed ? `<p class="typed">You typed: ${d.typed}</p>` : ""}
+      ${showAll}
+      ${c.note ? `<p class="note">${esc(c.note)}</p>` : ""}
+    </div>${actions}`;
+  fb.hidden = false;
+  if (!r.swedishPrompt && counted) speak(c.sv);
+  const nx = $("#next"); if (nx) { nx.onclick = advanceDefault; setTimeout(() => nx.focus(), 30); }
+  const ov = $("#override"); if (ov) ov.onclick = () => { r.result = "almost"; r.overridden = true; showFeedback(); };
+  fb.querySelectorAll("[data-rate]").forEach(b => b.onclick = () => finish(b.dataset.rate));
+  if (s.kind === "srs" && counted) setTimeout(() => $("#answer-input")?.blur(), 0);
+}
+function previewIvl(c, rating) { const n = schedule({ ...c }, rating); return n.ivl < 1 ? "soon" : n.ivl === 1 ? "tomorrow" : `in ${n.ivl} days`; }
+function rateButtons(c) {
+  return `<div class="rate"><button class="btn hard" data-rate="hard">Hard<small>${previewIvl(c, "hard")}</small></button><button class="btn easy" data-rate="easy">Easy<small>${previewIvl(c, "easy")}</small></button></div>`;
+}
+function schedule(c, rating) {
+  const t = now();
+  c.ease = c.ease || 2.5; c.ivl = c.ivl || 0; c.reps = c.reps || 0; c.lapses = c.lapses || 0;
+  if (!c.introduced) c.introduced = t;
+  if (rating === "again") { c.lapses++; c.reps = 0; c.ivl = 0; c.ease = Math.max(1.3, +(c.ease - 0.2).toFixed(2)); c.due = t + 10 * MIN; }
+  else if (rating === "hard") { c.ivl = c.ivl ? Math.max(c.ivl + 1, Math.round(c.ivl * 1.2)) : 1; c.ease = Math.max(1.3, +(c.ease - 0.15).toFixed(2)); c.reps++; c.due = t + c.ivl * DAY; }
+  else { c.ivl = c.ivl ? Math.max(c.ivl + 2, Math.round(c.ivl * c.ease * 1.3)) : (c.lapses ? 2 : 4); c.ease = Math.min(3.2, +(c.ease + 0.15).toFixed(2)); c.reps++; c.due = t + c.ivl * DAY; }
+  c.last = t;
+  return c;
+}
+function advanceDefault() {
+  const s = session, r = s.res; if (!r) return;
+  if (s.kind === "srs" && r.result !== "wrong") return; /* waits for Hard/Easy */
+  finish(r.result === "wrong" ? "again" : "next");
+}
+function finish(rating) {
+  const s = session, r = s.res, item = s.queue.shift(), firstTry = !s.missed.has(item.id);
+  if (r.result === "wrong") s.missed.add(item.id);
+  if (s.kind === "srs") {
+    const c = schedule({ ...S.cards.get(item.id) }, rating);
+    saveCard(item.id, c).catch(() => {});
+    if (rating === "again") s.queue.splice(Math.min(3, s.queue.length), 0, { id: item.id, dir: item.dir });
+    else { s.done++; if (firstTry) s.right++; }
+  } else { s.done++; if (r.result !== "wrong") s.right++; }
+  s.phase = "ask"; s.res = null; build();
+}
+document.addEventListener("keydown", e => {
+  if (view !== "session" || !session || session.phase !== "result") return;
+  if (session.kind === "srs" && session.res?.result !== "wrong" && (e.key === "1" || e.key === "2")) { e.preventDefault(); finish(e.key === "1" ? "hard" : "easy"); }
+});
+function buildSummary(el) {
+  const s = session;
+  if (!s.done) { go("practice"); return; }
+  const pct = Math.round(100 * s.right / s.done);
+  const missed = [...s.missed].map(id => [id, S.cards.get(id)]).filter(([, c]) => c);
+  el.innerHTML = `
+  <div class="panel stack">
+    <p class="eyebrow">${s.kind === "srs" ? "Review finished" : "Practice finished"}</p>
+    <div class="row" style="gap:16px;align-items:baseline"><span class="summary-score">${pct}%</span><span class="muted">${s.right} of ${plural(s.done, "card")} right on the first try</span></div>
+    ${missed.length ? `<h3>Words to watch</h3><ul class="missed">${missed.map(([, c]) => `<li><span lang="sv">${esc(c.sv)}</span><span>${esc(c.tr)}</span></li>`).join("")}</ul>` : `<p class="muted">No misses. Bra jobbat!</p>`}
+    <div class="row">${missed.length && s.kind === "drill" ? '<button class="btn primary" id="again">Practice the missed words</button>' : ""}<button class="btn" id="home">Back to practice</button></div>
+  </div>`;
+  $("#home").onclick = () => go("practice");
+  const a = $("#again"); if (a) a.onclick = () => startSession("drill", missed.map(([id]) => id));
+}
+
+/* ---------- learn ---------- */
+let learnRefresh = null;
+const L = { filter: "all", order: "added", idx: 0, hide: false, ids: [] };
+function buildLearn(el) {
+  if (!S.cards.size) { learnRefresh = null; return emptyState(el); }
+  el.innerHTML = `
+  <div class="stack" style="gap:16px">
+    <div class="spread">
+      <div class="chips" id="lfilter">${[["all", "All"], ["new", "New"], ["tricky", "Tricky"], ["recent", "Last 7 days"]].map(([k, l]) => `<button class="chip" data-f="${k}" aria-pressed="${L.filter === k}">${l}</button>`).join("")}</div>
+      <div class="row"><button class="btn ghost" id="lshuffle">Shuffle</button><label class="row small muted" style="gap:6px"><input type="checkbox" id="lhide" ${L.hide ? "checked" : ""}> Hide translation</label></div>
+    </div>
+    <div id="lcard"></div>
+    <p class="hint" style="text-align:center"><kbd>←</kbd> <kbd>→</kbd> move · <kbd>Space</kbd> show translation</p>
+  </div>`;
+  $("#lfilter").onclick = e => { const b = e.target.closest("[data-f]"); if (!b) return; L.filter = b.dataset.f; L.order = "added"; L.idx = 0; buildLearn(el); };
+  $("#lshuffle").onclick = () => { L.order = "shuffle"; L.ids = shuffle(L.ids); L.idx = 0; drawLearn(); };
+  $("#lhide").onchange = e => { L.hide = e.target.checked; drawLearn(); };
+  computeLearn(true); drawLearn();
+  learnRefresh = () => { computeLearn(false); drawLearn(); };
+}
+function computeLearn(reset) {
+  const week = now() - 7 * DAY;
+  const f = { all: () => true, new: isNew, tricky: isTricky, recent: c => (c.created || 0) >= week }[L.filter];
+  const ids = [...S.cards.entries()].filter(([, c]) => f(c)).sort((a, b) => (a[1].created || 0) - (b[1].created || 0)).map(([id]) => id);
+  if (L.order === "shuffle" && !reset) { const keep = L.ids.filter(id => ids.includes(id)); L.ids = [...keep, ...ids.filter(id => !keep.includes(id))]; }
+  else L.ids = ids;
+  L.idx = Math.min(L.idx, Math.max(0, L.ids.length - 1));
+}
+function drawLearn() {
+  const box = $("#lcard"); if (!box) return;
+  if (!L.ids.length) { box.innerHTML = `<div class="panel empty"><p class="muted">No words in this group yet.</p></div>`; return; }
+  const id = L.ids[L.idx], c = S.cards.get(id);
+  box.innerHTML = `
+    <div class="card learn-card">
+      <div class="row" style="justify-content:center"><div class="prompt" lang="sv">${esc(c.sv)}</div>${sayBtn(c.sv)}</div>
+      <div class="trans ${L.hide ? "hidden" : ""}" id="ltrans" ${L.hide ? 'role="button" tabindex="0" aria-label="Show translation"' : ""}>${esc(c.tr)}</div>
+      ${c.note ? `<p class="note">${esc(c.note)}</p>` : ""}
+    </div>
+    <div class="pager" style="margin-top:14px"><button class="btn" id="lprev" ${L.idx ? "" : "disabled"}>← Previous</button><span class="count">${L.idx + 1} / ${L.ids.length}</span><button class="btn" id="lnext" ${L.idx < L.ids.length - 1 ? "" : "disabled"}>Next →</button></div>`;
+  $("#lprev").onclick = () => moveLearn(-1);
+  $("#lnext").onclick = () => moveLearn(1);
+  const t = $("#ltrans"); t.onclick = () => t.classList.remove("hidden");
+}
+function moveLearn(d) { const n = L.idx + d; if (n < 0 || n >= L.ids.length) return; L.idx = n; drawLearn(); }
+document.addEventListener("keydown", e => {
+  if (view !== "learn" || e.target.matches("input,textarea,select")) return;
+  if (e.key === "ArrowRight") moveLearn(1);
+  else if (e.key === "ArrowLeft") moveLearn(-1);
+  else if (e.key === " ") { e.preventDefault(); $("#ltrans")?.classList.remove("hidden"); }
+});
+
+/* ---------- words ---------- */
+let wordsRefresh = null, editing = null, confirmDel = null, wordsQuery = "";
+function buildWords(el) {
+  el.innerHTML = `
+  <div class="stack" style="gap:16px">
+    <form class="panel" id="addf" autocomplete="off">
+      <h2>Add a word</h2>
+      <div class="row" style="align-items:flex-end">
+        <label class="field">Swedish<input type="text" id="add-sv" lang="sv" autocapitalize="off" spellcheck="false" placeholder="en lägenhet" required></label>
+        <label class="field">Translation<input type="text" id="add-tr" autocapitalize="off" placeholder="an apartment" required></label>
+      </div>
+      <label class="field">Note or example (optional)<input type="text" id="add-note" placeholder="Vi bor i en liten lägenhet."></label>
+      <p class="hint">Separate several accepted translations with a comma or slash, for example “big, large”. Text in brackets is optional when you answer.</p>
+      <div class="row"><button class="btn primary" type="submit">Add word</button></div>
+    </form>
+    <section class="panel">
+      <div><p class="eyebrow">Laptop → phone</p><h2>Move your words</h2></div>
+      <div class="sync-grid">
+        <div class="stack"><h3>Send words</h3><p class="small muted">Save your word list as ${FILE_NAME} in iCloud Drive. Practice progress isn't included.</p><div><button class="btn primary" id="exp" ${S.cards.size ? "" : "disabled"}>Export words</button></div></div>
+        <div class="stack"><h3>Get words</h3><p class="small muted">Choose ${FILE_NAME} from iCloud Drive. Progress on this device is kept.</p><input type="file" id="sync-file" aria-label="Word list file"><div id="sync-preview"></div></div>
+      </div>
+    </section>
+    <details class="panel import" id="imp">
+      <summary>Import a list (Notion, Excel, CSV)</summary>
+      <ol class="steps">
+        <li>In Notion, open the database as a full page.</li>
+        <li>Click <b>•••</b> in the top-right corner, then <b>Export</b>.</li>
+        <li>Choose <b>Markdown &amp; CSV</b> and click <b>Export</b>. You get a .zip file.</li>
+        <li>Unzip it and choose the <b>.csv</b> file below (on iPhone, the Files app unzips with a tap).</li>
+      </ol>
+      <p class="small muted">You can also paste rows straight from Notion, Excel or Google Sheets: one word per line, Swedish and translation separated by a tab, comma or semicolon.</p>
+      <input type="file" id="imp-file" accept=".csv,.tsv,.txt,text/csv,text/plain">
+      <textarea id="imp-text" placeholder="hus,house&#10;springa,to run&#10;glad,happy"></textarea>
+      <div id="imp-map"></div>
+    </details>
+    <section class="panel">
+      <div class="spread"><h2 id="wcount">Your words</h2><input type="search" id="wsearch" placeholder="Search" style="max-width:14rem" value="${esc(wordsQuery)}"></div>
+      <ul class="words" id="wlist"></ul>
+    </section>
+  </div>`;
+  $("#addf").onsubmit = e => {
+    e.preventDefault();
+    const sv = $("#add-sv").value.trim(), tr = $("#add-tr").value.trim(), note = $("#add-note").value.trim();
+    if (!sv || !tr) return;
+    if (findDup(sv, tr)) { toast(`“${sv}” is already in your list`); return; }
+    saveCard(newId(), blankCard(sv, tr, note)).then(() => toast(`Added “${sv}”`)).catch(() => {});
+    $("#add-sv").value = $("#add-tr").value = $("#add-note").value = ""; $("#add-sv").focus(); drawWords();
+  };
+  $("#wsearch").oninput = e => { wordsQuery = e.target.value; drawWords(); };
+  $("#exp").onclick = exportWords;
+  $("#sync-file").onchange = e => { const f = e.target.files[0]; if (f) readSyncFile(f); };
+  $("#imp-file").onchange = async e => { const f = e.target.files[0]; if (!f) return; $("#imp-text").value = await f.text(); parseImport(true); };
+  let t; $("#imp-text").oninput = () => { clearTimeout(t); t = setTimeout(() => parseImport(false), 250); };
+  drawWords();
+  wordsRefresh = () => { if (!editing) drawWords(); };
+}
+const dupKey = (sv, tr) => fold(sv) + "|" + fold(tr);
+function findDup(sv, tr) { const k = dupKey(sv, tr); return [...S.cards.values()].some(c => dupKey(c.sv, c.tr) === k); }
+function stateLabel(c) {
+  if (isNew(c)) return ["new", ""];
+  if (isTricky(c)) return ["tricky", "tricky"];
+  if (isDue(c)) return ["due", "due"];
+  const days = Math.max(0, Math.round((c.due - now()) / DAY));
+  return [days <= 0 ? "today" : `${days}d`, ""];
+}
+function drawWords() {
+  const list = $("#wlist"); if (!list) return;
+  const q = fold(wordsQuery);
+  const all = [...S.cards.entries()].sort((a, b) => (b[1].created || 0) - (a[1].created || 0));
+  const rows = q ? all.filter(([, c]) => fold(c.sv + " " + c.tr + " " + (c.note || "")).includes(q)) : all;
+  $("#wcount").textContent = S.cards.size ? `Your words · ${S.cards.size}` : "Your words";
+  if (!all.length) { list.innerHTML = `<li style="display:block" class="muted">Nothing here yet. Add a word above or import your list.</li>`; return; }
+  const shown = rows.slice(0, 300);
+  list.innerHTML = shown.map(([id, c]) => {
+    if (editing === id) return `<li class="editing" data-id="${id}"><div class="row" style="align-items:flex-end">
+      <label class="field">Swedish<input type="text" id="ed-sv" lang="sv" value="${esc(c.sv)}"></label>
+      <label class="field">Translation<input type="text" id="ed-tr" value="${esc(c.tr)}"></label></div>
+      <label class="field">Note<input type="text" id="ed-note" value="${esc(c.note)}"></label>
+      <div class="row"><button class="btn primary" data-act="save">Save</button><button class="btn" data-act="cancel">Cancel</button><button class="btn ghost" data-act="reset">Reset progress</button></div></li>`;
+    const [lbl, cls] = stateLabel(c);
+    const del = confirmDel === id
+      ? `<span class="row" style="gap:4px"><button class="btn danger" data-act="del-yes">Delete</button><button class="btn ghost" data-act="del-no">Keep</button></span>`
+      : `<span class="row" style="gap:2px;flex-wrap:nowrap"><span class="state ${cls}">${lbl}</span><button class="btn ghost" data-act="edit" aria-label="Edit ${esc(c.sv)}">Edit</button><button class="btn ghost" data-act="del" aria-label="Delete ${esc(c.sv)}">✕</button></span>`;
+    return `<li data-id="${id}"><span class="sv" lang="sv">${esc(c.sv)}</span><span class="en">${esc(c.tr)}</span>${del}</li>`;
+  }).join("") + (rows.length > shown.length ? `<li style="display:block" class="muted small">Showing 300 of ${rows.length}. Search to find others.</li>` : "") + (q && !rows.length ? `<li style="display:block" class="muted">No words match “${esc(wordsQuery)}”.</li>` : "");
+  list.onclick = e => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    const id = b.closest("li").dataset.id, c = S.cards.get(id), act = b.dataset.act;
+    if (act === "edit") { editing = id; confirmDel = null; drawWords(); $("#ed-sv")?.focus(); }
+    else if (act === "cancel") { editing = null; drawWords(); }
+    else if (act === "save") { const sv = $("#ed-sv").value.trim(), tr = $("#ed-tr").value.trim(); if (!sv || !tr) return; editing = null; saveCard(id, { ...c, sv, tr, note: $("#ed-note").value.trim() }).catch(() => {}); drawWords(); toast("Saved"); }
+    else if (act === "reset") { editing = null; saveCard(id, { ...blankCard(c.sv, c.tr, c.note), created: c.created }).catch(() => {}); drawWords(); toast("Progress reset"); }
+    else if (act === "del") { confirmDel = id; drawWords(); }
+    else if (act === "del-no") { confirmDel = null; drawWords(); }
+    else if (act === "del-yes") { confirmDel = null; deleteCard(id).then(() => toast(`Deleted “${c.sv}”`)).catch(() => {}); drawWords(); }
+  };
+}
+
+/* CSV / TSV parsing with quoted fields */
+function parseTable(text) {
+  text = text.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  const first = text.split("\n").find(l => l.trim()) || "";
+  const delim = first.includes("\t") ? "\t" : (first.split(";").length > first.split(",").length ? ";" : ",");
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+    else if (ch === '"' && f === "") q = true;
+    else if (ch === delim) { row.push(f); f = ""; }
+    else if (ch === "\n") { row.push(f); rows.push(row); row = []; f = ""; }
+    else f += ch;
+  }
+  if (f !== "" || row.length) { row.push(f); rows.push(row); }
+  return rows.map(r => r.map(c => c.trim())).filter(r => r.some(Boolean));
+}
+const IMP = { rows: [], header: true, sv: 0, tr: 1, note: -1 };
+function guessCols(head) {
+  const find = re => head.findIndex(h => re.test(h));
+  let sv = find(/swed|svensk|sv\b|ord|word|name|namn|palabra|sueco/i);
+  let tr = find(/transl|översätt|english|engelska|meaning|eng\b|spanish|español|espanol|traduc|betydelse/i);
+  if (sv < 0) sv = 0; if (tr < 0 || tr === sv) tr = sv === 0 ? 1 : 0;
+  const note = find(/note|example|exempel|anteckn|ejemplo|sentence|mening/i);
+  return { sv, tr, note: note === sv || note === tr ? -1 : note };
+}
+function parseImport(fromFile) {
+  const box = $("#imp-map"), text = $("#imp-text").value;
+  IMP.rows = text.trim() ? parseTable(text) : [];
+  if (!IMP.rows.length) { box.innerHTML = ""; return; }
+  const head = IMP.rows[0];
+  const looksHeader = fromFile || /name|word|ord|swed|svensk|transl|english|tags|created/i.test(head.join(" "));
+  IMP.header = looksHeader;
+  Object.assign(IMP, guessCols(looksHeader ? head : []));
+  if (!looksHeader) { IMP.sv = 0; IMP.tr = 1; IMP.note = head.length > 2 ? 2 : -1; }
+  drawImport();
+}
+function drawImport() {
+  const box = $("#imp-map"), rows = IMP.rows, width = Math.max(...rows.map(r => r.length));
+  if (width < 2) { box.innerHTML = `<p class="small" style="color:var(--wrong)">Each line needs at least two columns: the Swedish word and its translation.</p>`; return; }
+  const names = Array.from({ length: width }, (_, i) => IMP.header ? (rows[0][i] || `Column ${i + 1}`) : `Column ${i + 1}`);
+  const body = IMP.header ? rows.slice(1) : rows;
+  const opts = (sel, none) => (none ? `<option value="-1" ${sel === -1 ? "selected" : ""}>None</option>` : "") + names.map((n, i) => `<option value="${i}" ${i === sel ? "selected" : ""}>${esc(n)}</option>`).join("");
+  const items = body.map(r => ({ sv: r[IMP.sv] || "", tr: r[IMP.tr] || "", note: IMP.note >= 0 ? r[IMP.note] || "" : "" })).filter(x => x.sv && x.tr);
+  const fresh = items.filter((x, i) => !findDup(x.sv, x.tr) && items.findIndex(y => dupKey(y.sv, y.tr) === dupKey(x.sv, x.tr)) === i);
+  box.innerHTML = `<div class="stack">
+    <label class="row small" style="gap:6px"><input type="checkbox" id="imp-head" ${IMP.header ? "checked" : ""}> First row holds column names</label>
+    <div class="row" style="align-items:flex-end">
+      <label class="field">Swedish column<select id="imp-sv">${opts(IMP.sv)}</select></label>
+      <label class="field">Translation column<select id="imp-tr">${opts(IMP.tr)}</select></label>
+      <label class="field">Note column<select id="imp-note">${opts(IMP.note, true)}</select></label>
+    </div>
+    <div class="preview"><table><thead><tr><th>Swedish</th><th>Translation</th>${IMP.note >= 0 ? "<th>Note</th>" : ""}</tr></thead><tbody>${items.slice(0, 5).map(x => `<tr><td>${esc(x.sv)}</td><td>${esc(x.tr)}</td>${IMP.note >= 0 ? `<td>${esc(x.note)}</td>` : ""}</tr>`).join("")}</tbody></table></div>
+    <p class="small muted">${plural(items.length, "word")} found${items.length - fresh.length ? `, ${items.length - fresh.length} already in your list will be skipped` : ""}.</p>
+    <div class="row"><button class="btn primary" id="imp-go" ${fresh.length ? "" : "disabled"}>Import ${plural(fresh.length, "word")}</button><span class="small muted" id="imp-prog"></span></div>
+  </div>`;
+  $("#imp-head").onchange = e => { IMP.header = e.target.checked; drawImport(); };
+  ["sv", "tr", "note"].forEach(k => $("#imp-" + k).onchange = e => { IMP[k] = +e.target.value; drawImport(); });
+  $("#imp-go").onclick = () => runImport(fresh);
+}
+function runImport(items) {
+  const base = now();
+  items.forEach((x, k) => S.cards.set(newId(), { ...blankCard(x.sv, x.tr, x.note), created: base + k }));
+  if (saveLocal()) toast(`Imported ${plural(items.length, "word")}`);
+  $("#imp-text").value = ""; $("#imp-file").value = ""; $("#imp-map").innerHTML = ""; $("#imp").open = false; drawWords();
+}
+
+/* ---------- moving words between devices ---------- */
+const FILE_NAME = "ordforrad-words.json";
+async function exportWords() {
+  const words = [...S.cards.entries()].map(([id, c]) => ({ id, sv: c.sv, tr: c.tr, note: c.note || "", created: c.created || 0 }));
+  const data = JSON.stringify({ app: "ordforrad", kind: "words", exported: new Date().toISOString(), words }, null, 1);
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await window.showSaveFilePicker({ suggestedName: FILE_NAME, types: [{ description: "Word list", accept: { "application/json": [".json"] } }] });
+      const w = await h.createWritable(); await w.write(data); await w.close();
+      toast(`Exported ${plural(words.length, "word")}`); return;
+    } catch (e) { if (e?.name === "AbortError") return; }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+  a.download = FILE_NAME; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  toast(`Exported ${plural(words.length, "word")}`);
+}
+/* Make this device's list match the file: add new words, apply edits, drop words no longer in it, keep progress. */
+function mergeWords(list) {
+  const cards = new Map(S.cards), incoming = new Set(list.map(w => w.id));
+  const byKey = new Map([...cards].map(([id, c]) => [dupKey(c.sv, c.tr), id]));
+  let added = 0, changed = 0, removed = 0;
+  for (const w of list) {
+    let id = cards.has(w.id) ? w.id : null;
+    const twin = byKey.get(dupKey(w.sv, w.tr));
+    if (!id && twin && !incoming.has(twin)) { cards.set(w.id, cards.get(twin)); cards.delete(twin); id = w.id; }
+    if (id) {
+      const c = cards.get(id);
+      if (c.sv !== w.sv || c.tr !== w.tr || (c.note || "") !== (w.note || "")) { cards.set(id, { ...c, sv: w.sv, tr: w.tr, note: w.note || "" }); changed++; }
+    } else { cards.set(w.id, { ...blankCard(w.sv, w.tr, w.note), created: w.created || now() }); added++; }
+  }
+  for (const id of [...cards.keys()]) if (!incoming.has(id)) { cards.delete(id); removed++; }
+  return { cards, added, changed, removed };
+}
+async function readSyncFile(file) {
+  const box = $("#sync-preview");
+  let list, when;
+  try {
+    const d = JSON.parse(await file.text());
+    if (d?.app !== "ordforrad" || !Array.isArray(d.words)) throw 0;
+    list = d.words.filter(w => w && typeof w.id === "string" && w.sv && w.tr).map(w => ({ id: w.id, sv: String(w.sv), tr: String(w.tr), note: String(w.note || ""), created: +w.created || 0 }));
+    when = d.exported ? new Date(d.exported).toLocaleString() : "";
+  } catch {
+    box.innerHTML = `<p class="small" style="color:var(--wrong)">That isn't an Ordförråd word list. Choose the ${FILE_NAME} file you exported on your laptop.</p>`; return;
+  }
+  const m = mergeWords(list);
+  const parts = [m.added && `${m.added} new`, m.changed && `${m.changed} edited`, m.removed && `${m.removed} removed`].filter(Boolean);
+  box.innerHTML = `<div class="stack">
+    <p class="small">${plural(list.length, "word")} in the file${when ? `, exported ${esc(when)}` : ""}.</p>
+    <p class="small muted">${parts.length ? "This will make " + parts.join(", ") + " on this device. Your practice progress stays." : "This device already has these words."}${m.removed ? " Words that aren't in the file are removed from this device." : ""}</p>
+    <div class="row"><button class="btn primary" id="sync-go" ${parts.length ? "" : "disabled"}>Update words</button><button class="btn ghost" id="sync-cancel">Cancel</button></div></div>`;
+  const reset = () => { box.innerHTML = ""; $("#sync-file").value = ""; };
+  $("#sync-cancel").onclick = reset;
+  $("#sync-go").onclick = () => { S.cards = m.cards; if (saveLocal()) toast("Words updated"); reset(); drawWords(); };
+}
+
+/* ---------- boot ---------- */
+const start = (location.hash || "").slice(1);
+view = VIEWS.includes(start) ? start : "practice";
+document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.view === view ? "page" : "false"));
+init();
+})();
+</script>
+</body>
+</html>
