@@ -137,7 +137,8 @@ kbd { font: 500 .72rem var(--f-mono); border: 1px solid var(--line); border-bott
 .words li:last-child { border-bottom: 0; }
 .words .sv { font-weight: 600; overflow-wrap: anywhere; }
 .words .en { color: var(--muted); overflow-wrap: anywhere; }
-.words .state { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
+.words .cat { font-size: .7rem; font-weight: 600; letter-spacing: .04em; color: var(--accent); border: 1px solid var(--line); border-radius: 99px; padding: 0 6px; white-space: nowrap; }
+.words .state {font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 99px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
 .words .state.due { color: var(--almost); }
 .words .state.tricky { color: var(--wrong); }
 .words li.editing { grid-template-columns: 1fr; }
@@ -230,18 +231,37 @@ function newLeftToday() {
   const introducedToday = [...S.cards.values()].filter(c => (c.introduced || 0) >= today()).length;
   return Math.max(0, (S.settings.newPerDay || 20) - introducedToday);
 }
-function blankCard(sv, tr, note) { return { sv, tr, note: note || "", created: now(), ease: 2.5, ivl: 0, due: 0, reps: 0, lapses: 0 }; }
+function blankCard(sv, tr, note, cat) { return { sv, tr, note: note || "", cat: cat || "", created: now(), ease: 2.5, ivl: 0, due: 0, reps: 0, lapses: 0 }; }
+
+/* Word groups (e.g. SFI, Komvux): one active group narrows practice and learn. */
+const groupNames = () => [...new Set([...S.cards.values()].map(c => c.cat).filter(Boolean))].sort((a, b) => a.localeCompare(b, "sv"));
+function activeGroup() { const g = S.settings.group; return g && [...S.cards.values()].some(c => c.cat === g) ? g : null; }
+function scoped() { const g = activeGroup(); return [...S.cards.entries()].filter(([, c]) => !g || c.cat === g); }
+function groupChips() {
+  const names = groupNames(); if (!names.length) return "";
+  const g = activeGroup(), count = n => [...S.cards.values()].filter(c => c.cat === n).length;
+  return `<div class="row" style="gap:10px"><span class="eyebrow">Word group</span><div class="chips" id="groups">
+    <button class="chip" data-g="" aria-pressed="${!g}">All · ${S.cards.size}</button>
+    ${names.map(n => `<button class="chip" data-g="${esc(n)}" aria-pressed="${g === n}">${esc(n)} · ${count(n)}</button>`).join("")}</div></div>`;
+}
+function wireGroupChips(after) {
+  const box = $("#groups"); if (!box) return;
+  box.onclick = e => { const b = e.target.closest("[data-g]"); if (!b) return; S.settings.group = b.dataset.g; saveSettings(); after(); };
+}
 
 /* ---------- answer checking ---------- */
 function fold(s) { return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim(); }
 const ARTICLES = /^(en|ett|att|to|the|a|an|el|la|los|las|un|una|le|les|der|die|das)\s+/;
 function variants(answer) {
-  const out = new Set();
-  const parts = String(answer).split(/[,;\/]|\s+\|\s+/).map(s => s.trim()).filter(Boolean);
-  for (const p of parts.length ? parts : [answer]) {
-    const noParen = p.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
-    for (const v of [p, noParen]) if (v) { out.add(v); const stripped = v.replace(new RegExp(ARTICLES.source, "i"), ""); if (stripped && stripped !== v) out.add(stripped); }
+  /* Text in brackets is optional: accept each part without it, and with it minus the brackets. */
+  const out = new Set(), text = String(answer);
+  const split = s => s.split(/[,;\/]|\s+\|\s+/).map(p => p.replace(/\s+/g, " ").trim()).filter(Boolean);
+  for (const v of [...split(text.replace(/\([^)]*\)/g, " ")), ...split(text.replace(/[()]/g, ""))]) {
+    out.add(v);
+    const stripped = v.replace(new RegExp(ARTICLES.source, "i"), "");
+    if (stripped && stripped !== v) out.add(stripped);
   }
+  if (!out.size && text.trim()) out.add(text.trim());
   return [...out];
 }
 function lev(a, b) {
@@ -260,9 +280,11 @@ function grade(input, answer) {
   if (!raw) return { result: "wrong", target: variants(answer)[0] || answer };
   const vs = variants(answer);
   const inF = fold(input).replace(ARTICLES, "");
+  /* Punctuation (?, !, -) never counts against you; accents do get flagged. */
+  const bare = s => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   let best = null;
   for (const v of vs) {
-    if (v.toLowerCase() === raw) return { result: "ok", target: v };
+    if (v.toLowerCase() === raw || bare(v) === bare(raw)) return { result: "ok", target: v };
     const vF = fold(v).replace(ARTICLES, "");
     const d = lev(inF, vF), tie = lev(raw, v.toLowerCase());
     if (!best || d < best.d || (d === best.d && tie < best.tie)) best = { d, tie, v, len: vF.length };
@@ -329,8 +351,8 @@ function emptyState(el) {
 const DIRS = [["sv-tr", "Swedish → translation"], ["tr-sv", "Translation → Swedish"], ["mix", "Mixed"]];
 let drillSize = 15;
 function buildPractice(el) {
-  const cards = [...S.cards.entries()];
-  if (!cards.length) return emptyState(el);
+  if (!S.cards.size) return emptyState(el);
+  const cards = scoped();
   const due = cards.filter(([, c]) => isDue(c)).length;
   const fresh = Math.min(cards.filter(([, c]) => isNew(c)).length, newLeftToday());
   const tricky = cards.filter(([, c]) => isTricky(c)).length;
@@ -338,6 +360,7 @@ function buildPractice(el) {
   if (!sizes.includes(drillSize) && drillSize !== "all") drillSize = 15;
   el.innerHTML = `
   <div class="stack" style="gap:16px">
+    ${groupChips()}
     <section class="panel">
       <div class="spread"><div><p class="eyebrow">Spaced repetition</p><h2>Today's review</h2></div></div>
       <div class="stats">
@@ -362,6 +385,7 @@ function buildPractice(el) {
         <select id="npd">${[5, 10, 15, 20, 30, 50].map(n => `<option ${n === S.settings.newPerDay ? "selected" : ""}>${n}</option>`).join("")}</select></label>
     </section>
   </div>`;
+  wireGroupChips(build);
   $("#sizes").onclick = e => { const b = e.target.closest("[data-n]"); if (!b || b.disabled) return; drillSize = b.dataset.n === "all" ? "all" : +b.dataset.n; build(); };
   $("#dirs").onclick = e => { const b = e.target.closest("[data-d]"); if (!b) return; S.settings.direction = b.dataset.d; saveSettings(); build(); };
   $("#npd").onchange = e => { S.settings.newPerDay = +e.target.value; saveSettings(); build(); };
@@ -369,7 +393,7 @@ function buildPractice(el) {
   const s = $("#start-srs"); if (s) s.onclick = () => startSession("srs");
 }
 function nextDueText() {
-  const next = [...S.cards.values()].filter(c => !isNew(c)).map(c => c.due).sort((a, b) => a - b)[0];
+  const next = scoped().map(([, c]) => c).filter(c => !isNew(c)).map(c => c.due).sort((a, b) => a - b)[0];
   if (!next) return "Add more words to keep going.";
   const h = (next - now()) / 36e5;
   return "Next review " + (h < 1 ? `in ${Math.max(1, Math.round(h * 60))} min` : h < 24 ? `in ${Math.round(h)} h` : `in ${Math.round(h / 24)} days`) + ". Quick practice is always open.";
@@ -380,9 +404,9 @@ function pickDir() { const d = S.settings.direction; return d === "mix" ? (Math.
 function startSession(kind, ids) {
   let queueIds;
   if (ids) queueIds = shuffle(ids);
-  else if (kind === "drill") { const all = shuffle([...S.cards.keys()]); queueIds = drillSize === "all" ? all : all.slice(0, drillSize); }
+  else if (kind === "drill") { const all = shuffle(scoped().map(([id]) => id)); queueIds = drillSize === "all" ? all : all.slice(0, drillSize); }
   else {
-    const entries = [...S.cards.entries()];
+    const entries = scoped();
     const due = entries.filter(([, c]) => isDue(c)).sort((a, b) => a[1].due - b[1].due).map(([id]) => id);
     const fresh = shuffle(entries.filter(([, c]) => isNew(c)).map(([id]) => id)).slice(0, newLeftToday());
     queueIds = [...shuffle(due), ...fresh];
@@ -509,6 +533,7 @@ function buildLearn(el) {
   if (!S.cards.size) { learnRefresh = null; return emptyState(el); }
   el.innerHTML = `
   <div class="stack" style="gap:16px">
+    ${groupChips()}
     <div class="spread">
       <div class="chips" id="lfilter">${[["all", "All"], ["new", "New"], ["tricky", "Tricky"], ["recent", "Last 7 days"]].map(([k, l]) => `<button class="chip" data-f="${k}" aria-pressed="${L.filter === k}">${l}</button>`).join("")}</div>
       <div class="row"><button class="btn ghost" id="lshuffle">Shuffle</button><label class="row small muted" style="gap:6px"><input type="checkbox" id="lhide" ${L.hide ? "checked" : ""}> Hide translation</label></div>
@@ -516,6 +541,7 @@ function buildLearn(el) {
     <div id="lcard"></div>
     <p class="hint" style="text-align:center"><kbd>←</kbd> <kbd>→</kbd> move · <kbd>Space</kbd> show translation</p>
   </div>`;
+  wireGroupChips(() => { L.idx = 0; buildLearn(el); });
   $("#lfilter").onclick = e => { const b = e.target.closest("[data-f]"); if (!b) return; L.filter = b.dataset.f; L.order = "added"; L.idx = 0; buildLearn(el); };
   $("#lshuffle").onclick = () => { L.order = "shuffle"; L.ids = shuffle(L.ids); L.idx = 0; drawLearn(); };
   $("#lhide").onchange = e => { L.hide = e.target.checked; drawLearn(); };
@@ -525,7 +551,7 @@ function buildLearn(el) {
 function computeLearn(reset) {
   const week = now() - 7 * DAY;
   const f = { all: () => true, new: isNew, tricky: isTricky, recent: c => (c.created || 0) >= week }[L.filter];
-  const ids = [...S.cards.entries()].filter(([, c]) => f(c)).sort((a, b) => (a[1].created || 0) - (b[1].created || 0)).map(([id]) => id);
+  const ids = scoped().filter(([, c]) => f(c)).sort((a, b) => (a[1].created || 0) - (b[1].created || 0)).map(([id]) => id);
   if (L.order === "shuffle" && !reset) { const keep = L.ids.filter(id => ids.includes(id)); L.ids = [...keep, ...ids.filter(id => !keep.includes(id))]; }
   else L.ids = ids;
   L.idx = Math.min(L.idx, Math.max(0, L.ids.length - 1));
@@ -564,7 +590,11 @@ function buildWords(el) {
         <label class="field">Swedish<input type="text" id="add-sv" lang="sv" autocapitalize="off" spellcheck="false" placeholder="en lägenhet" required></label>
         <label class="field">Translation<input type="text" id="add-tr" autocapitalize="off" placeholder="an apartment" required></label>
       </div>
-      <label class="field">Note or example (optional)<input type="text" id="add-note" placeholder="Vi bor i en liten lägenhet."></label>
+      <div class="row" style="align-items:flex-end">
+        <label class="field" style="flex:3 1 220px">Note or example (optional)<input type="text" id="add-note" placeholder="Vi bor i en liten lägenhet."></label>
+        <label class="field">Group (optional)<input type="text" id="add-cat" list="group-list" placeholder="Komvux" value="${esc(S.settings.lastGroup || "")}"></label>
+      </div>
+      <datalist id="group-list">${groupNames().map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
       <p class="hint">Separate several accepted translations with a comma or slash, for example “big, large”. Text in brackets is optional when you answer.</p>
       <div class="row"><button class="btn primary" type="submit">Add word</button></div>
     </form>
@@ -595,10 +625,11 @@ function buildWords(el) {
   </div>`;
   $("#addf").onsubmit = e => {
     e.preventDefault();
-    const sv = $("#add-sv").value.trim(), tr = $("#add-tr").value.trim(), note = $("#add-note").value.trim();
+    const sv = $("#add-sv").value.trim(), tr = $("#add-tr").value.trim(), note = $("#add-note").value.trim(), cat = $("#add-cat").value.trim();
     if (!sv || !tr) return;
     if (findDup(sv, tr)) { toast(`“${sv}” is already in your list`); return; }
-    saveCard(newId(), blankCard(sv, tr, note)).then(() => toast(`Added “${sv}”`)).catch(() => {});
+    S.settings.lastGroup = cat;
+    saveCard(newId(), blankCard(sv, tr, note, cat)).then(() => toast(`Added “${sv}”`)).catch(() => {});
     $("#add-sv").value = $("#add-tr").value = $("#add-note").value = ""; $("#add-sv").focus(); drawWords();
   };
   $("#wsearch").oninput = e => { wordsQuery = e.target.value; drawWords(); };
@@ -622,7 +653,7 @@ function drawWords() {
   const list = $("#wlist"); if (!list) return;
   const q = fold(wordsQuery);
   const all = [...S.cards.entries()].sort((a, b) => (b[1].created || 0) - (a[1].created || 0));
-  const rows = q ? all.filter(([, c]) => fold(c.sv + " " + c.tr + " " + (c.note || "")).includes(q)) : all;
+  const rows = q ? all.filter(([, c]) => fold(c.sv + " " + c.tr + " " + (c.note || "") + " " + (c.cat || "")).includes(q)) : all;
   $("#wcount").textContent = S.cards.size ? `Your words · ${S.cards.size}` : "Your words";
   if (!all.length) { list.innerHTML = `<li style="display:block" class="muted">Nothing here yet. Add a word above or import your list.</li>`; return; }
   const shown = rows.slice(0, 300);
@@ -630,21 +661,22 @@ function drawWords() {
     if (editing === id) return `<li class="editing" data-id="${id}"><div class="row" style="align-items:flex-end">
       <label class="field">Swedish<input type="text" id="ed-sv" lang="sv" value="${esc(c.sv)}"></label>
       <label class="field">Translation<input type="text" id="ed-tr" value="${esc(c.tr)}"></label></div>
-      <label class="field">Note<input type="text" id="ed-note" value="${esc(c.note)}"></label>
+      <div class="row" style="align-items:flex-end"><label class="field" style="flex:3 1 220px">Note<input type="text" id="ed-note" value="${esc(c.note)}"></label>
+      <label class="field">Group<input type="text" id="ed-cat" list="group-list" value="${esc(c.cat)}"></label></div>
       <div class="row"><button class="btn primary" data-act="save">Save</button><button class="btn" data-act="cancel">Cancel</button><button class="btn ghost" data-act="reset">Reset progress</button></div></li>`;
     const [lbl, cls] = stateLabel(c);
     const del = confirmDel === id
       ? `<span class="row" style="gap:4px"><button class="btn danger" data-act="del-yes">Delete</button><button class="btn ghost" data-act="del-no">Keep</button></span>`
       : `<span class="row" style="gap:2px;flex-wrap:nowrap"><span class="state ${cls}">${lbl}</span><button class="btn ghost" data-act="edit" aria-label="Edit ${esc(c.sv)}">Edit</button><button class="btn ghost" data-act="del" aria-label="Delete ${esc(c.sv)}">✕</button></span>`;
-    return `<li data-id="${id}"><span class="sv" lang="sv">${esc(c.sv)}</span><span class="en">${esc(c.tr)}</span>${del}</li>`;
+    return `<li data-id="${id}"><span class="sv" lang="sv">${esc(c.sv)}</span><span class="en">${esc(c.tr)}${c.cat ? ` <span class="cat">${esc(c.cat)}</span>` : ""}</span>${del}</li>`;
   }).join("") + (rows.length > shown.length ? `<li style="display:block" class="muted small">Showing 300 of ${rows.length}. Search to find others.</li>` : "") + (q && !rows.length ? `<li style="display:block" class="muted">No words match “${esc(wordsQuery)}”.</li>` : "");
   list.onclick = e => {
     const b = e.target.closest("[data-act]"); if (!b) return;
     const id = b.closest("li").dataset.id, c = S.cards.get(id), act = b.dataset.act;
     if (act === "edit") { editing = id; confirmDel = null; drawWords(); $("#ed-sv")?.focus(); }
     else if (act === "cancel") { editing = null; drawWords(); }
-    else if (act === "save") { const sv = $("#ed-sv").value.trim(), tr = $("#ed-tr").value.trim(); if (!sv || !tr) return; editing = null; saveCard(id, { ...c, sv, tr, note: $("#ed-note").value.trim() }).catch(() => {}); drawWords(); toast("Saved"); }
-    else if (act === "reset") { editing = null; saveCard(id, { ...blankCard(c.sv, c.tr, c.note), created: c.created }).catch(() => {}); drawWords(); toast("Progress reset"); }
+    else if (act === "save") { const sv = $("#ed-sv").value.trim(), tr = $("#ed-tr").value.trim(); if (!sv || !tr) return; editing = null; saveCard(id, { ...c, sv, tr, note: $("#ed-note").value.trim(), cat: $("#ed-cat").value.trim() }).catch(() => {}); drawWords(); toast("Saved"); }
+    else if (act === "reset") { editing = null; saveCard(id, { ...blankCard(c.sv, c.tr, c.note, c.cat), created: c.created }).catch(() => {}); drawWords(); toast("Progress reset"); }
     else if (act === "del") { confirmDel = id; drawWords(); }
     else if (act === "del-no") { confirmDel = null; drawWords(); }
     else if (act === "del-yes") { confirmDel = null; deleteCard(id).then(() => toast(`Deleted “${c.sv}”`)).catch(() => {}); drawWords(); }
@@ -668,25 +700,41 @@ function parseTable(text) {
   if (f !== "" || row.length) { row.push(f); rows.push(row); }
   return rows.map(r => r.map(c => c.trim())).filter(r => r.some(Boolean));
 }
-const IMP = { rows: [], header: true, sv: 0, tr: 1, note: -1 };
+const IMP = { rows: [], header: true, sv: 0, tr: 1, note: -1, cat: -1, date: -1, replace: false };
 function guessCols(head) {
-  const find = re => head.findIndex(h => re.test(h));
+  const find = (re, taken = []) => head.findIndex((h, i) => re.test(h) && !taken.includes(i));
   let sv = find(/swed|svensk|sv\b|ord|word|name|namn|palabra|sueco/i);
   let tr = find(/transl|översätt|english|engelska|meaning|eng\b|spanish|español|espanol|traduc|betydelse/i);
   if (sv < 0) sv = 0; if (tr < 0 || tr === sv) tr = sv === 0 ? 1 : 0;
-  const note = find(/note|example|exempel|anteckn|ejemplo|sentence|mening/i);
-  return { sv, tr, note: note === sv || note === tr ? -1 : note };
+  const note = find(/note|example|exempel|anteckn|ejemplo|sentence|mening/i, [sv, tr]);
+  const cat = find(/categor|kategori|group|grupp|select|level|nivå|course|kurs|tags?$/i, [sv, tr, note]);
+  const date = find(/date|datum|created|added/i, [sv, tr, note, cat]);
+  return { sv, tr, note, cat, date };
 }
 function parseImport(fromFile) {
   const box = $("#imp-map"), text = $("#imp-text").value;
   IMP.rows = text.trim() ? parseTable(text) : [];
   if (!IMP.rows.length) { box.innerHTML = ""; return; }
   const head = IMP.rows[0];
-  const looksHeader = fromFile || /name|word|ord|swed|svensk|transl|english|tags|created/i.test(head.join(" "));
+  const looksHeader = fromFile || /name|word|ord|swed|svensk|transl|english|tags|created|date|select|categor/i.test(head.join(" "));
   IMP.header = looksHeader;
   Object.assign(IMP, guessCols(looksHeader ? head : []));
-  if (!looksHeader) { IMP.sv = 0; IMP.tr = 1; IMP.note = head.length > 2 ? 2 : -1; }
+  if (!looksHeader) { IMP.sv = 0; IMP.tr = 1; IMP.note = head.length > 2 ? 2 : -1; IMP.cat = IMP.date = -1; }
   drawImport();
+}
+/* Reads Notion dates ("November 1, 2026 4:39 PM") and ISO dates ("2026-11-01 16:39"). */
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function parseDate(s) {
+  if (!s) return 0;
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (m) return new Date(+m[1], m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)).getTime();
+  m = s.match(/^([A-Za-z]{3})[A-Za-z]*\.? (\d{1,2}),? (\d{4})(?:,? (\d{1,2}):(\d{2}) ?([AP]M)?)?/i);
+  if (m && MONTHS.includes(m[1].toLowerCase())) {
+    let h = +(m[4] || 0);
+    if (m[6]) { h %= 12; if (/pm/i.test(m[6])) h += 12; }
+    return new Date(+m[3], MONTHS.indexOf(m[1].toLowerCase()), +m[2], h, +(m[5] || 0)).getTime();
+  }
+  const t = Date.parse(s); return isNaN(t) ? 0 : t;
 }
 function drawImport() {
   const box = $("#imp-map"), rows = IMP.rows, width = Math.max(...rows.map(r => r.length));
@@ -694,8 +742,12 @@ function drawImport() {
   const names = Array.from({ length: width }, (_, i) => IMP.header ? (rows[0][i] || `Column ${i + 1}`) : `Column ${i + 1}`);
   const body = IMP.header ? rows.slice(1) : rows;
   const opts = (sel, none) => (none ? `<option value="-1" ${sel === -1 ? "selected" : ""}>None</option>` : "") + names.map((n, i) => `<option value="${i}" ${i === sel ? "selected" : ""}>${esc(n)}</option>`).join("");
-  const items = body.map(r => ({ sv: r[IMP.sv] || "", tr: r[IMP.tr] || "", note: IMP.note >= 0 ? r[IMP.note] || "" : "" })).filter(x => x.sv && x.tr);
-  const fresh = items.filter((x, i) => !findDup(x.sv, x.tr) && items.findIndex(y => dupKey(y.sv, y.tr) === dupKey(x.sv, x.tr)) === i);
+  const col = (r, i) => i >= 0 ? r[i] || "" : "";
+  const items = body.map(r => ({ sv: col(r, IMP.sv), tr: col(r, IMP.tr), note: col(r, IMP.note), cat: col(r, IMP.cat), date: parseDate(col(r, IMP.date)) })).filter(x => x.sv && x.tr);
+  const unique = items.filter((x, i) => items.findIndex(y => dupKey(y.sv, y.tr) === dupKey(x.sv, x.tr)) === i);
+  const fresh = unique.filter(x => !findDup(x.sv, x.tr));
+  const plan = IMP.replace ? replacePlan(unique) : null;
+  const extra = [IMP.note >= 0 && ["Note", "note"], IMP.cat >= 0 && ["Group", "cat"]].filter(Boolean);
   box.innerHTML = `<div class="stack">
     <label class="row small" style="gap:6px"><input type="checkbox" id="imp-head" ${IMP.header ? "checked" : ""}> First row holds column names</label>
     <div class="row" style="align-items:flex-end">
@@ -703,25 +755,52 @@ function drawImport() {
       <label class="field">Translation column<select id="imp-tr">${opts(IMP.tr)}</select></label>
       <label class="field">Note column<select id="imp-note">${opts(IMP.note, true)}</select></label>
     </div>
-    <div class="preview"><table><thead><tr><th>Swedish</th><th>Translation</th>${IMP.note >= 0 ? "<th>Note</th>" : ""}</tr></thead><tbody>${items.slice(0, 5).map(x => `<tr><td>${esc(x.sv)}</td><td>${esc(x.tr)}</td>${IMP.note >= 0 ? `<td>${esc(x.note)}</td>` : ""}</tr>`).join("")}</tbody></table></div>
-    <p class="small muted">${plural(items.length, "word")} found${items.length - fresh.length ? `, ${items.length - fresh.length} already in your list will be skipped` : ""}.</p>
-    <div class="row"><button class="btn primary" id="imp-go" ${fresh.length ? "" : "disabled"}>Import ${plural(fresh.length, "word")}</button><span class="small muted" id="imp-prog"></span></div>
+    <div class="row" style="align-items:flex-end">
+      <label class="field">Group column (SFI, Komvux…)<select id="imp-cat">${opts(IMP.cat, true)}</select></label>
+      <label class="field">Date added column<select id="imp-date">${opts(IMP.date, true)}</select></label>
+    </div>
+    <div class="preview"><table><thead><tr><th>Swedish</th><th>Translation</th>${extra.map(([h]) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${items.slice(0, 5).map(x => `<tr><td>${esc(x.sv)}</td><td>${esc(x.tr)}</td>${extra.map(([, k]) => `<td>${esc(x[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    ${S.cards.size ? `<label class="row small" style="gap:6px;align-items:flex-start"><input type="checkbox" id="imp-replace" ${IMP.replace ? "checked" : ""}> <span>Replace my current list with this file. Words with the same Swedish spelling keep their practice progress.</span></label>` : ""}
+    <p class="small muted">${plan
+      ? `${plural(unique.length, "word")} in the file. This will add ${plan.added}, update ${plan.updated} and remove ${plan.removed} ${plan.removed === 1 ? "word" : "words"} that aren't in the file.`
+      : `${plural(items.length, "word")} found${items.length - fresh.length ? `, ${items.length - fresh.length} already in your list or repeated will be skipped` : ""}.`}</p>
+    <div class="row"><button class="btn primary" id="imp-go" ${(plan ? unique.length : fresh.length) ? "" : "disabled"}>${plan ? "Replace my list" : `Import ${plural(fresh.length, "word")}`}</button></div>
   </div>`;
   $("#imp-head").onchange = e => { IMP.header = e.target.checked; drawImport(); };
-  ["sv", "tr", "note"].forEach(k => $("#imp-" + k).onchange = e => { IMP[k] = +e.target.value; drawImport(); });
-  $("#imp-go").onclick = () => runImport(fresh);
+  ["sv", "tr", "note", "cat", "date"].forEach(k => $("#imp-" + k).onchange = e => { IMP[k] = +e.target.value; drawImport(); });
+  const rep = $("#imp-replace"); if (rep) rep.onchange = e => { IMP.replace = e.target.checked; drawImport(); };
+  $("#imp-go").onclick = () => plan ? finishImport(plan.cards, `List replaced: ${unique.length} words`) : runImport(fresh);
 }
+/* Keeps file order: the first row gets the latest time, so the Words list shows rows in the same order. */
+const importTime = (x, k, total, base) => (x.date || base) + (total - k);
 function runImport(items) {
-  const base = now();
-  items.forEach((x, k) => S.cards.set(newId(), { ...blankCard(x.sv, x.tr, x.note), created: base + k }));
-  if (saveLocal()) toast(`Imported ${plural(items.length, "word")}`);
+  const base = now(), cards = new Map(S.cards);
+  items.forEach((x, k) => cards.set(newId(), { ...blankCard(x.sv, x.tr, x.note, x.cat), created: importTime(x, k, items.length, base) }));
+  finishImport(cards, `Imported ${plural(items.length, "word")}`);
+}
+/* Match file rows to existing cards by Swedish spelling so corrections keep their progress. */
+function replacePlan(items) {
+  const base = now(), bySv = new Map(), cards = new Map();
+  for (const [id, c] of S.cards) { const k = fold(c.sv); if (!bySv.has(k)) bySv.set(k, id); }
+  let added = 0, updated = 0;
+  items.forEach((x, k) => {
+    const id = bySv.get(fold(x.sv)), fields = { sv: x.sv, tr: x.tr, note: x.note, cat: x.cat, created: importTime(x, k, items.length, base) };
+    if (id && !cards.has(id)) { cards.set(id, { ...S.cards.get(id), ...fields }); updated++; }
+    else { cards.set(newId(), { ...blankCard(x.sv, x.tr, x.note, x.cat), created: fields.created }); added++; }
+  });
+  return { cards, added, updated, removed: S.cards.size - updated };
+}
+function finishImport(cards, message) {
+  const before = S.cards; S.cards = cards;
+  if (saveLocal()) toast(message); else S.cards = before;
+  IMP.replace = false;
   $("#imp-text").value = ""; $("#imp-file").value = ""; $("#imp-map").innerHTML = ""; $("#imp").open = false; drawWords();
 }
 
 /* ---------- moving words between devices ---------- */
 const FILE_NAME = "ordforrad-words.json";
 async function exportWords() {
-  const words = [...S.cards.entries()].map(([id, c]) => ({ id, sv: c.sv, tr: c.tr, note: c.note || "", created: c.created || 0 }));
+  const words = [...S.cards.entries()].map(([id, c]) => ({ id, sv: c.sv, tr: c.tr, note: c.note || "", cat: c.cat || "", created: c.created || 0 }));
   const data = JSON.stringify({ app: "ordforrad", kind: "words", exported: new Date().toISOString(), words }, null, 1);
   if (window.showSaveFilePicker) {
     try {
@@ -747,8 +826,8 @@ function mergeWords(list) {
     if (!id && twin && !incoming.has(twin)) { cards.set(w.id, cards.get(twin)); cards.delete(twin); id = w.id; }
     if (id) {
       const c = cards.get(id);
-      if (c.sv !== w.sv || c.tr !== w.tr || (c.note || "") !== (w.note || "")) { cards.set(id, { ...c, sv: w.sv, tr: w.tr, note: w.note || "" }); changed++; }
-    } else { cards.set(w.id, { ...blankCard(w.sv, w.tr, w.note), created: w.created || now() }); added++; }
+      if (c.sv !== w.sv || c.tr !== w.tr || (c.note || "") !== w.note || (c.cat || "") !== w.cat || c.created !== w.created) { cards.set(id, { ...c, sv: w.sv, tr: w.tr, note: w.note, cat: w.cat, created: w.created || c.created }); changed++; }
+    } else { cards.set(w.id, { ...blankCard(w.sv, w.tr, w.note, w.cat), created: w.created || now() }); added++; }
   }
   for (const id of [...cards.keys()]) if (!incoming.has(id)) { cards.delete(id); removed++; }
   return { cards, added, changed, removed };
@@ -759,7 +838,7 @@ async function readSyncFile(file) {
   try {
     const d = JSON.parse(await file.text());
     if (d?.app !== "ordforrad" || !Array.isArray(d.words)) throw 0;
-    list = d.words.filter(w => w && typeof w.id === "string" && w.sv && w.tr).map(w => ({ id: w.id, sv: String(w.sv), tr: String(w.tr), note: String(w.note || ""), created: +w.created || 0 }));
+    list = d.words.filter(w => w && typeof w.id === "string" && w.sv && w.tr).map(w => ({ id: w.id, sv: String(w.sv), tr: String(w.tr), note: String(w.note || ""), cat: String(w.cat || ""), created: +w.created || 0 }));
     when = d.exported ? new Date(d.exported).toLocaleString() : "";
   } catch {
     box.innerHTML = `<p class="small" style="color:var(--wrong)">That isn't an Ordförråd word list. Choose the ${FILE_NAME} file you exported on your laptop.</p>`; return;
