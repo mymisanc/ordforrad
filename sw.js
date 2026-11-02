@@ -1,5 +1,5 @@
 // Caches the app so it opens offline. Bump VERSION after changing any file.
-const VERSION = "ordforrad-v2";
+const VERSION = "ordforrad-v3";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {

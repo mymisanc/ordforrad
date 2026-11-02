@@ -90,7 +90,7 @@ button, .btn { font: 600 .95rem var(--f-body); }
 .chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .chip:disabled { opacity: .4; cursor: not-allowed; }
 
-input[type=text], input[type=search], textarea, select {
+input[type=text], input[type=search], input[type=email], input[type=password], textarea, select {
   font: 400 1rem var(--f-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; box-sizing: border-box; }
 textarea { font-family: var(--f-mono); font-size: .85rem; min-height: 120px; resize: vertical; }
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; font-weight: 600; color: var(--muted); flex: 1 1 160px; min-width: 0; }
@@ -147,6 +147,9 @@ details.import summary { cursor: pointer; font-weight: 600; }
 .preview table { border-collapse: collapse; font-size: .85rem; width: 100%; }
 .preview td, .preview th { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
 .preview th { color: var(--muted); font-weight: 600; }
+.panel > label.field { flex: none; }
+.groups { padding: 14px 20px; gap: 10px; }
+.groups .chip { padding: 8px 18px; font-size: 1rem; }
 .steps { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
 .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: .9rem; z-index: 20; max-width: calc(100% - 32px); }
 .banner { font-size: .85rem; padding: 10px 14px; border-radius: 10px; background: var(--sunk); color: var(--muted); }
@@ -160,8 +163,6 @@ details.import summary { cursor: pointer; font-weight: 600; }
   .words li { grid-template-columns: minmax(0,1fr) auto; } .words .en { grid-column: 1; grid-row: 2; }
   .words li > :last-child { grid-row: 1 / span 2; grid-column: 2; }
 }
-.sync-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 20px; }
-.sync-grid > * { min-width: 0; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -192,18 +193,30 @@ const newId = () => "c" + Date.now().toString(36) + Math.random().toString(36).s
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 /* ---------- state & storage ---------- */
-/* Everything lives in this browser's localStorage; nothing is sent anywhere. */
-const S = { cards: new Map(), settings: { direction: "sv-tr", newPerDay: 20 }, ready: false };
+/* Words live in this browser's localStorage, so the app works offline.
+   With Supabase set up below, changes are also uploaded and other devices pull them. */
+const S = { cards: new Map(), settings: { direction: "sv-tr", newPerDay: 20 }, ready: false, dirty: new Set(), gone: new Set(), user: null };
 const LS = "ordforrad.v1";
 function loadLocal() {
-  try { const d = JSON.parse(localStorage.getItem(LS) || "null"); if (d) { S.cards = new Map(Object.entries(d.cards || {})); Object.assign(S.settings, d.settings || {}); } } catch {}
+  try {
+    const d = JSON.parse(localStorage.getItem(LS) || "null"); if (!d) return;
+    S.cards = new Map(Object.entries(d.cards || {})); Object.assign(S.settings, d.settings || {});
+    S.dirty = new Set(d.dirty || []); S.gone = new Set(d.gone || []); S.user = d.user || null;
+  } catch {}
 }
 function saveLocal() {
-  try { localStorage.setItem(LS, JSON.stringify({ cards: Object.fromEntries(S.cards), settings: S.settings })); return true; }
+  try { localStorage.setItem(LS, JSON.stringify({ cards: Object.fromEntries(S.cards), settings: S.settings, dirty: [...S.dirty], gone: [...S.gone], user: S.user })); return true; }
   catch { toast("Couldn't save on this device. Storage may be full or blocked."); return false; }
 }
-function saveCard(id, card) { S.cards.set(id, card); saveLocal(); return Promise.resolve(); }
-function deleteCard(id) { S.cards.delete(id); saveLocal(); return Promise.resolve(); }
+/* Remember which cards still need uploading (dirty) or deleting (gone) on Supabase. */
+function track(changed, removed) {
+  if (!cloudOn()) return;
+  for (const id of changed) { S.dirty.add(id); S.gone.delete(id); }
+  for (const id of removed) { S.dirty.delete(id); S.gone.add(id); }
+  syncSoon();
+}
+function saveCard(id, card) { S.cards.set(id, card); track([id], []); saveLocal(); return Promise.resolve(); }
+function deleteCard(id) { S.cards.delete(id); track([], [id]); saveLocal(); return Promise.resolve(); }
 function saveSettings() { saveLocal(); }
 
 function init() {
@@ -213,10 +226,125 @@ function init() {
   catch { banner("This browser is blocking storage (private browsing?), so words you add won't be kept."); }
   try { navigator.storage?.persist?.(); } catch {}
   refresh();
+  sync();
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 /* Keep two open tabs of the app in step. */
 window.addEventListener("storage", e => { if (e.key === LS) { S.cards = new Map(); loadLocal(); refresh(); } });
+
+/* ---------- Supabase sync ---------- */
+/* Project URL and publishable (anon) key from Supabase → Project Settings → API Keys.
+   Both are safe to publish: the table's row level security only lets you reach your own words.
+   Leave them empty to keep everything on this device only. */
+const CLOUD = { url: "https://unsuxuesawpcdkmpwtei.supabase.co", key: "sb_publishable_VOVvyQr4rxQN8Cu2QH4sCg_3hor4taE" };
+const cloudOn = () => !!(CLOUD.url && CLOUD.key);
+const AUTH_KEY = LS + ".auth";
+let AUTH = null;
+try { AUTH = JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch {}
+function setAuth(a) { AUTH = a; try { a ? localStorage.setItem(AUTH_KEY, JSON.stringify(a)) : localStorage.removeItem(AUTH_KEY); } catch {} }
+class AuthError extends Error {}
+async function authCall(grant, body) {
+  const res = await fetch(`${CLOUD.url}/auth/v1/token?grant_type=${grant}`, { method: "POST", headers: { apikey: CLOUD.key, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new (res.status === 400 || res.status === 401 ? AuthError : Error)(d.error_description || d.msg || d.message || `Supabase answered ${res.status}`);
+  return { access: d.access_token, refresh: d.refresh_token, expires: (d.expires_at ? d.expires_at * 1000 : now() + d.expires_in * 1000), user: d.user?.id, email: d.user?.email };
+}
+async function accessToken(force) {
+  if (!AUTH) throw new AuthError("Signed out");
+  if (force || AUTH.expires - MIN < now()) {
+    try { setAuth(await authCall("refresh_token", { refresh_token: AUTH.refresh })); }
+    catch (e) { if (e instanceof AuthError) signedOut(); throw e; }
+  }
+  return AUTH.access;
+}
+async function api(path, opts = {}, retry = true) {
+  const res = await fetch(`${CLOUD.url}/rest/v1/${path}`, { ...opts, headers: { apikey: CLOUD.key, Authorization: "Bearer " + await accessToken(), "Content-Type": "application/json", ...opts.headers } });
+  if (res.status === 401 && retry) { await accessToken(true); return api(path, opts, false); }
+  if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.message || `Supabase answered ${res.status}`); }
+  return res;
+}
+async function signIn(email, password) {
+  const a = await authCall("password", { email, password });
+  /* A different account (or the old, unsynced list): start this device from what's in Supabase. */
+  if (S.user !== a.user) { S.cards = new Map(); S.dirty = new Set(); S.gone = new Set(); S.user = a.user; saveLocal(); }
+  setAuth(a); build(); await sync();
+}
+function signedOut() { setAuth(null); SYNC.error = ""; showSyncState(); if (view === "session") view = "practice"; build(); }
+async function signOut() {
+  try { await fetch(`${CLOUD.url}/auth/v1/logout`, { method: "POST", headers: { apikey: CLOUD.key, Authorization: "Bearer " + AUTH.access } }); } catch {}
+  signedOut();
+}
+
+const SYNC = { busy: null, again: false, last: 0, error: "" };
+let syncTimer;
+function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(sync, 1500); }
+function sync() {
+  if (!cloudOn() || !AUTH) return Promise.resolve();
+  if (SYNC.busy) { SYNC.again = true; return SYNC.busy; }
+  clearTimeout(syncTimer);
+  SYNC.busy = (async () => {
+    showSyncState();
+    try {
+      await pushChanges();
+      const cards = new Map((await pullAll()).map(r => [r.id, r.data]));
+      /* Anything changed on this device while downloading wins until it's uploaded. */
+      for (const id of S.dirty) if (S.cards.has(id)) cards.set(id, S.cards.get(id));
+      for (const id of S.gone) cards.delete(id);
+      S.cards = cards; saveLocal();
+      SYNC.last = now(); SYNC.error = "";
+    } catch (e) {
+      if (!(e instanceof AuthError)) SYNC.error = e instanceof TypeError ? "offline" : e.message;
+    }
+    SYNC.busy = null; showSyncState(); if (AUTH) refresh();
+    if (SYNC.again) { SYNC.again = false; sync(); }
+  })();
+  return SYNC.busy;
+}
+async function pushChanges() {
+  const up = [...S.dirty].filter(id => S.cards.has(id)).map(id => [id, S.cards.get(id)]);
+  for (let i = 0; i < up.length; i += 500) {
+    const part = up.slice(i, i + 500);
+    await api("cards?on_conflict=user_id,id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(part.map(([id, data]) => ({ user_id: AUTH.user, id, data }))) });
+    for (const [id, c] of part) if (S.cards.get(id) === c) S.dirty.delete(id);
+    saveLocal();
+  }
+  const gone = [...S.gone];
+  for (let i = 0; i < gone.length; i += 100) {
+    const part = gone.slice(i, i + 100);
+    await api(`cards?id=in.(${part.map(encodeURIComponent).join(",")})`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    part.forEach(id => S.gone.delete(id)); saveLocal();
+  }
+  for (const id of S.dirty) if (!S.cards.has(id)) S.dirty.delete(id);
+}
+async function pullAll() {
+  const rows = [];
+  for (;;) {
+    const page = await (await api(`cards?select=id,data&order=id&limit=1000&offset=${rows.length}`)).json();
+    if (!page.length) return rows;
+    rows.push(...page);
+  }
+}
+const pending = () => S.dirty.size + S.gone.size;
+function syncText() {
+  if (SYNC.busy) return "Syncing…";
+  const waiting = pending() ? ` ${plural(pending(), "change")} will upload when it's back.` : "";
+  if (SYNC.error === "offline") return "No connection. Everything is saved on this device." + waiting;
+  if (SYNC.error) return `Couldn't sync: ${SYNC.error}. If your Supabase project was paused, restore it in the Supabase dashboard.` + waiting;
+  if (SYNC.last) return `Up to date · synced ${new Date(SYNC.last).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return "Not synced yet.";
+}
+let syncBanner = false;
+function showSyncState() {
+  const el = $("#sync-state"); if (el) el.textContent = syncText();
+  const problem = SYNC.error && SYNC.error !== "offline" && AUTH;
+  if (problem || syncBanner) { banner(problem ? syncText() : ""); syncBanner = !!problem; }
+}
+window.addEventListener("online", () => sync());
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { if (pending()) sync(); }   /* upload before the phone puts the app to sleep */
+  else if (now() - SYNC.last > MIN) sync();
+});
 function banner(t) { const b = $("#banner"); b.textContent = t; b.hidden = !t; }
 let toastT;
 function toast(t) { const el = $("#toast"); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 2600); }
@@ -237,12 +365,12 @@ function blankCard(sv, tr, note, cat) { return { sv, tr, note: note || "", cat: 
 const groupNames = () => [...new Set([...S.cards.values()].map(c => c.cat).filter(Boolean))].sort((a, b) => a.localeCompare(b, "sv"));
 function activeGroup() { const g = S.settings.group; return g && [...S.cards.values()].some(c => c.cat === g) ? g : null; }
 function scoped() { const g = activeGroup(); return [...S.cards.entries()].filter(([, c]) => !g || c.cat === g); }
-function groupChips() {
+function groupChips(label) {
   const names = groupNames(); if (!names.length) return "";
   const g = activeGroup(), count = n => [...S.cards.values()].filter(c => c.cat === n).length;
-  return `<div class="row" style="gap:10px"><span class="eyebrow">Word group</span><div class="chips" id="groups">
+  return `<section class="panel groups"><p class="eyebrow">${label}</p><div class="chips" id="groups">
     <button class="chip" data-g="" aria-pressed="${!g}">All · ${S.cards.size}</button>
-    ${names.map(n => `<button class="chip" data-g="${esc(n)}" aria-pressed="${g === n}">${esc(n)} · ${count(n)}</button>`).join("")}</div></div>`;
+    ${names.map(n => `<button class="chip" data-g="${esc(n)}" aria-pressed="${g === n}">${esc(n)} · ${count(n)}</button>`).join("")}</div></section>`;
 }
 function wireGroupChips(after) {
   const box = $("#groups"); if (!box) return;
@@ -333,7 +461,29 @@ function go(v) {
 }
 document.querySelectorAll("nav.tabs button").forEach(b => b.addEventListener("click", () => go(b.dataset.view)));
 function build() { const el = $("#view"); el.innerHTML = ""; if (!S.ready) { el.innerHTML = '<div class="panel empty"><p class="muted">Loading your words…</p></div>'; return; }
+  if (cloudOn() && !AUTH) return buildSignIn(el);
   ({ practice: buildPractice, learn: buildLearn, words: buildWords, session: buildSession })[view](el); }
+function buildSignIn(el) {
+  el.innerHTML = `
+  <form class="panel stack" id="signin">
+    <div><p class="eyebrow">Welcome</p><h2>Sign in</h2></div>
+    <p class="small muted">Use the email and password of the user you created in your Supabase project. You only need to do this once on each device.</p>
+    <label class="field">Email<input type="email" id="si-email" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+    <label class="field">Password<input type="password" id="si-pw" autocomplete="current-password" required></label>
+    <p class="small" id="si-err" style="color:var(--wrong)" hidden></p>
+    <div class="row"><button class="btn primary" type="submit" id="si-go">Sign in</button></div>
+  </form>`;
+  $("#signin").onsubmit = async e => {
+    e.preventDefault();
+    const err = $("#si-err"), btn = $("#si-go"); err.hidden = true; btn.disabled = true; btn.textContent = "Signing in…";
+    try { await signIn($("#si-email").value.trim(), $("#si-pw").value); }
+    catch (x) {
+      if (!$("#si-err")) return;
+      err.textContent = x instanceof AuthError ? "That email and password didn't match." : x instanceof TypeError ? "No connection. Try again when you're online." : x.message;
+      err.hidden = false; btn.disabled = false; btn.textContent = "Sign in";
+    }
+  };
+}
 let built = false;
 function refresh() {
   if (!built && S.ready) { built = true; build(); return; }
@@ -343,7 +493,8 @@ function refresh() {
 }
 
 function emptyState(el) {
-  el.innerHTML = `<div class="panel empty stack"><h2>No words yet</h2><p class="muted">On your laptop, add words or import your Notion list in the Words tab. On your phone, open Words and choose the word list file from iCloud Drive.</p><div><button class="btn primary" id="go-words">Go to Words</button></div></div>`;
+  if (SYNC.busy) { el.innerHTML = '<div class="panel empty"><p class="muted">Loading your words…</p></div>'; return; }
+  el.innerHTML = `<div class="panel empty stack"><h2>No words yet</h2><p class="muted">Add words or import your list in the Words tab.${cloudOn() ? " They show up on your other devices on their own." : ""}</p><div><button class="btn primary" id="go-words">Go to Words</button></div></div>`;
   $("#go-words").onclick = () => go("words");
 }
 
@@ -360,7 +511,7 @@ function buildPractice(el) {
   if (!sizes.includes(drillSize) && drillSize !== "all") drillSize = 15;
   el.innerHTML = `
   <div class="stack" style="gap:16px">
-    ${groupChips()}
+    ${groupChips(view === "learn" ? "Show words from" : "Practice words from")}
     <section class="panel">
       <div class="spread"><div><p class="eyebrow">Spaced repetition</p><h2>Today's review</h2></div></div>
       <div class="stats">
@@ -533,7 +684,7 @@ function buildLearn(el) {
   if (!S.cards.size) { learnRefresh = null; return emptyState(el); }
   el.innerHTML = `
   <div class="stack" style="gap:16px">
-    ${groupChips()}
+    ${groupChips(view === "learn" ? "Show words from" : "Practice words from")}
     <div class="spread">
       <div class="chips" id="lfilter">${[["all", "All"], ["new", "New"], ["tricky", "Tricky"], ["recent", "Last 7 days"]].map(([k, l]) => `<button class="chip" data-f="${k}" aria-pressed="${L.filter === k}">${l}</button>`).join("")}</div>
       <div class="row"><button class="btn ghost" id="lshuffle">Shuffle</button><label class="row small muted" style="gap:6px"><input type="checkbox" id="lhide" ${L.hide ? "checked" : ""}> Hide translation</label></div>
@@ -598,13 +749,12 @@ function buildWords(el) {
       <p class="hint">Separate several accepted translations with a comma or slash, for example “big, large”. Text in brackets is optional when you answer.</p>
       <div class="row"><button class="btn primary" type="submit">Add word</button></div>
     </form>
-    <section class="panel">
-      <div><p class="eyebrow">Laptop → phone</p><h2>Move your words</h2></div>
-      <div class="sync-grid">
-        <div class="stack"><h3>Send words</h3><p class="small muted">Save your word list as ${FILE_NAME} in iCloud Drive. Practice progress isn't included.</p><div><button class="btn primary" id="exp" ${S.cards.size ? "" : "disabled"}>Export words</button></div></div>
-        <div class="stack"><h3>Get words</h3><p class="small muted">Choose ${FILE_NAME} from iCloud Drive. Progress on this device is kept.</p><input type="file" id="sync-file" aria-label="Word list file"><div id="sync-preview"></div></div>
-      </div>
-    </section>
+    ${cloudOn() ? `<section class="panel">
+      <div><p class="eyebrow">Sync</p><h2>Your account</h2></div>
+      <p class="small muted">Signed in as <b>${esc(AUTH.email)}</b>. Words and practice progress sync between your devices through your Supabase project.</p>
+      <p class="small" id="sync-state">${esc(syncText())}</p>
+      <div class="row"><button class="btn" id="sync-now">Sync now</button><button class="btn ghost" id="signout">Sign out</button></div>
+    </section>` : ""}
     <details class="panel import" id="imp">
       <summary>Import a list (Notion, Excel, CSV)</summary>
       <ol class="steps">
@@ -633,8 +783,7 @@ function buildWords(el) {
     $("#add-sv").value = $("#add-tr").value = $("#add-note").value = ""; $("#add-sv").focus(); drawWords();
   };
   $("#wsearch").oninput = e => { wordsQuery = e.target.value; drawWords(); };
-  $("#exp").onclick = exportWords;
-  $("#sync-file").onchange = e => { const f = e.target.files[0]; if (f) readSyncFile(f); };
+  if (cloudOn()) { $("#sync-now").onclick = () => sync(); $("#signout").onclick = signOut; }
   $("#imp-file").onchange = async e => { const f = e.target.files[0]; if (!f) return; $("#imp-text").value = await f.text(); parseImport(true); };
   let t; $("#imp-text").oninput = () => { clearTimeout(t); t = setTimeout(() => parseImport(false), 250); };
   drawWords();
@@ -792,66 +941,12 @@ function replacePlan(items) {
 }
 function finishImport(cards, message) {
   const before = S.cards; S.cards = cards;
-  if (saveLocal()) toast(message); else S.cards = before;
+  if (saveLocal()) {
+    track([...cards].filter(([id, c]) => before.get(id) !== c).map(([id]) => id), [...before.keys()].filter(id => !cards.has(id)));
+    saveLocal(); toast(message);
+  } else S.cards = before;
   IMP.replace = false;
   $("#imp-text").value = ""; $("#imp-file").value = ""; $("#imp-map").innerHTML = ""; $("#imp").open = false; drawWords();
-}
-
-/* ---------- moving words between devices ---------- */
-const FILE_NAME = "ordforrad-words.json";
-async function exportWords() {
-  const words = [...S.cards.entries()].map(([id, c]) => ({ id, sv: c.sv, tr: c.tr, note: c.note || "", cat: c.cat || "", created: c.created || 0 }));
-  const data = JSON.stringify({ app: "ordforrad", kind: "words", exported: new Date().toISOString(), words }, null, 1);
-  if (window.showSaveFilePicker) {
-    try {
-      const h = await window.showSaveFilePicker({ suggestedName: FILE_NAME, types: [{ description: "Word list", accept: { "application/json": [".json"] } }] });
-      const w = await h.createWritable(); await w.write(data); await w.close();
-      toast(`Exported ${plural(words.length, "word")}`); return;
-    } catch (e) { if (e?.name === "AbortError") return; }
-  }
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
-  a.download = FILE_NAME; document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  toast(`Exported ${plural(words.length, "word")}`);
-}
-/* Make this device's list match the file: add new words, apply edits, drop words no longer in it, keep progress. */
-function mergeWords(list) {
-  const cards = new Map(S.cards), incoming = new Set(list.map(w => w.id));
-  const byKey = new Map([...cards].map(([id, c]) => [dupKey(c.sv, c.tr), id]));
-  let added = 0, changed = 0, removed = 0;
-  for (const w of list) {
-    let id = cards.has(w.id) ? w.id : null;
-    const twin = byKey.get(dupKey(w.sv, w.tr));
-    if (!id && twin && !incoming.has(twin)) { cards.set(w.id, cards.get(twin)); cards.delete(twin); id = w.id; }
-    if (id) {
-      const c = cards.get(id);
-      if (c.sv !== w.sv || c.tr !== w.tr || (c.note || "") !== w.note || (c.cat || "") !== w.cat || c.created !== w.created) { cards.set(id, { ...c, sv: w.sv, tr: w.tr, note: w.note, cat: w.cat, created: w.created || c.created }); changed++; }
-    } else { cards.set(w.id, { ...blankCard(w.sv, w.tr, w.note, w.cat), created: w.created || now() }); added++; }
-  }
-  for (const id of [...cards.keys()]) if (!incoming.has(id)) { cards.delete(id); removed++; }
-  return { cards, added, changed, removed };
-}
-async function readSyncFile(file) {
-  const box = $("#sync-preview");
-  let list, when;
-  try {
-    const d = JSON.parse(await file.text());
-    if (d?.app !== "ordforrad" || !Array.isArray(d.words)) throw 0;
-    list = d.words.filter(w => w && typeof w.id === "string" && w.sv && w.tr).map(w => ({ id: w.id, sv: String(w.sv), tr: String(w.tr), note: String(w.note || ""), cat: String(w.cat || ""), created: +w.created || 0 }));
-    when = d.exported ? new Date(d.exported).toLocaleString() : "";
-  } catch {
-    box.innerHTML = `<p class="small" style="color:var(--wrong)">That isn't an Ordförråd word list. Choose the ${FILE_NAME} file you exported on your laptop.</p>`; return;
-  }
-  const m = mergeWords(list);
-  const parts = [m.added && `${m.added} new`, m.changed && `${m.changed} edited`, m.removed && `${m.removed} removed`].filter(Boolean);
-  box.innerHTML = `<div class="stack">
-    <p class="small">${plural(list.length, "word")} in the file${when ? `, exported ${esc(when)}` : ""}.</p>
-    <p class="small muted">${parts.length ? "This will make " + parts.join(", ") + " on this device. Your practice progress stays." : "This device already has these words."}${m.removed ? " Words that aren't in the file are removed from this device." : ""}</p>
-    <div class="row"><button class="btn primary" id="sync-go" ${parts.length ? "" : "disabled"}>Update words</button><button class="btn ghost" id="sync-cancel">Cancel</button></div></div>`;
-  const reset = () => { box.innerHTML = ""; $("#sync-file").value = ""; };
-  $("#sync-cancel").onclick = reset;
-  $("#sync-go").onclick = () => { S.cards = m.cards; if (saveLocal()) toast("Words updated"); reset(); drawWords(); };
 }
 
 /* ---------- boot ---------- */
